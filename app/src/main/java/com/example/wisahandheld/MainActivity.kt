@@ -44,14 +44,15 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // ใน MainActivity.kt เพิ่มเคส "Area"
                     "Area" -> {
-                        // 🌟 จำลองข้อมูล Area ตาม PIC ที่เลือก
-                        val dummyAreas = listOf("SQR", "FN3", "FA1", "IP1", "ALS")
+                        val dummyAreas = listOf("SQR", "FN3", "FN2", "FA1", "IP1", "ALS", "PLT", "WHS")
                         SelectAreaScreen(
                             picName = selectedPic,
                             areaList = dummyAreas,
-                            onAreaSelected = { area ->
-                                // ขั้นตอนถัดไป...
+                            onNextClick = { selectedList ->
+                                // เก็บข้อมูลรายการที่เลือก (selectedList) แล้วไปหน้าต่อไป
+                                scope.launch { delay(250); currentScreen = "NextProcess" }
                             },
                             onBackClick = { scope.launch { delay(150); currentScreen = "Pic" } }
                         )
