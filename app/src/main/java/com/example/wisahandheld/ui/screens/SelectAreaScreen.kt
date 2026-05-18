@@ -1,14 +1,9 @@
 package com.example.wisahandheld.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,7 +43,8 @@ fun SelectAreaScreen(
     onNextClick: (List<String>) -> Unit,
     onBackClick: () -> Unit
 ) {
-    var selectedAreas by remember { mutableStateOf(setOf<String>()) }
+    // 🌟 เปลี่ยนมาเก็บค่าแค่ "อันเดียว" (String?) แทนการเก็บหลายอัน (Set)
+    var selectedArea by remember { mutableStateOf<String?>(null) }
 
     val glowGradient = Brush.radialGradient(
         colors = listOf(Color(0xFFFF6B00).copy(alpha = 0.3f), Color(0xFF0A0A0A)),
@@ -96,7 +92,7 @@ fun SelectAreaScreen(
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.SansSerif,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 32.dp) // ระยะห่างจากปุ่มกำลังสวยตามที่ปรับไว้
+                        modifier = Modifier.padding(bottom = 32.dp)
                     )
                 }
 
@@ -109,12 +105,15 @@ fun SelectAreaScreen(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(areaList) { area ->
-                        val isSelected = selectedAreas.contains(area)
+                        val isSelected = selectedArea == area
                         OrangeGridAreaCard(
                             text = area,
                             isSelected = isSelected,
                             onToggle = {
-                                selectedAreas = if (isSelected) selectedAreas - area else selectedAreas + area
+                                // 🌟 พอกดปุ๊บ ให้เซ็ตค่าที่เลือก และสั่งเปลี่ยนหน้าทันที!
+                                selectedArea = area
+                                // ส่งค่ากลับเป็น List (ที่มี 1 อัน) เพื่อไม่ให้กระทบกับ MainActivity เดิม
+                                onNextClick(listOf(area))
                             }
                         )
                     }
@@ -130,10 +129,10 @@ fun SelectAreaScreen(
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start, // 🌟 จัดปุ่ม Back ให้ชิดซ้าย (ลบปุ่ม Next ออกแล้ว)
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // ปุ่ม Back แบบวงกลมมินิมอล ขอบจางๆ
+                    // ปุ่ม Back
                     Box(
                         modifier = Modifier
                             .size(48.dp)
@@ -149,29 +148,6 @@ fun SelectAreaScreen(
                             tint = Color(0xFFFF6B00),
                             modifier = Modifier.size(22.dp)
                         )
-                    }
-
-                    // 🌟 ปุ่ม Next ดีไซน์ใหม่: พื้นหลังดำทึบ + ขอบสีส้ม + ข้อความสีส้ม
-                    AnimatedVisibility(
-                        visible = selectedAreas.isNotEmpty(),
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color(0xFF141416)) // พื้นหลังสีดำเข้ม (แมตช์กับสีปุ่มตอนกดเลือก)
-                                .border(1.5.dp, Color(0xFFFF6B00), RoundedCornerShape(24.dp)) // เส้นขอบสีส้มหนากำลังดี
-                                .clickable { onNextClick(selectedAreas.toList()) }
-                                .padding(horizontal = 32.dp, vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = "Next →",
-                                color = Color(0xFFFF6B00), // เปลี่ยนข้อความเป็นสีส้มตามสั่ง
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
                 }
             }
