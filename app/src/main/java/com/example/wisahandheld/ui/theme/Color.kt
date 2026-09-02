@@ -1,18 +1,22 @@
-package com.example.wisahandheld.ui.theme // เช็คให้ตรงกับโปรเจคของคุณนะครับ
+package com.example.wisahandheld.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// --- PML Tech Palette ---
-val OrangePML = Color(0xFFFF6B00)      // สีส้มหลัก
-val OrangeDark = Color(0xFFCC5500)     // สีส้มเข้มสำหรับกดปุ่ม
-val DarkBg = Color(0xFF0A0A0A)         // สีดำพื้นหลัง (ลึกพิเศษเพื่อให้ Tech)
-val CardBg = Color(0xFF1C1C1E)         // สีเทาเข้มสำหรับการ์ด (Glassmorphism base)
-val BorderWhite = Color(0xFF333333)    // สีขอบการ์ดบางๆ
+// Same palette as the wisaCore web app (frontend/tailwind.config.js) —
+// keeping the two apps visually consistent.
+val Ink = Color(0xFF14140F)      // near-black text / dark surfaces
+val Lemon = Color(0xFFD7FF3F)    // accent lime-green
+val Canvas = Color(0xFFF3F2ED)   // page background
+val CardWhite = Color(0xFFFFFFFF)
+val Muted = Color(0xFF9B9890)    // secondary / muted text
 
-// --- Text Colors ---
-val WhiteText = Color(0xFFFFFFFF)      // ตัวหนังสือสีขาว
-val GrayText = Color(0xFF8E8E93)       // ตัวหนังสือสีเทาสำหรับรายละเอียด
+val BorderLight = Ink.copy(alpha = 0.08f)
+val LemonSoft = Lemon.copy(alpha = 0.3f)   // tinted badge backgrounds
+val LemonBadgeText = Color(0xFF5C6B0A)     // readable text on LemonSoft
 
-// --- Functional Colors ---
-val SuccessGreen = Color(0xFF22C55E)   // สีเขียวเมื่อ Sync สำเร็จ
-val ErrorRed = Color(0xFFEF4444)       // สีแดงสำหรับพวก Error หรือ Not Found
+// Grayish-green used for "you must type this yourself" fields (Box/Pcs/Seq
+// on Input Stock) — distinct from Lemon, which marks scanned/auto-filled.
+val ManualAccent = Color(0xFF9BAE8C)
+
+val SuccessText = Color(0xFF3B6D11)
+val ErrorText = Color(0xFFA32D2D)

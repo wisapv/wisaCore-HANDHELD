@@ -1,49 +1,47 @@
-package com.example.wisahandheld.ui.theme // เช็คให้ตรงกับโปรเจคของคุณนะครับ
+package com.example.wisahandheld.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// บังคับใช้ DarkColorScheme สำหรับธีม Tech
-private val DarkColorScheme = darkColorScheme(
-    primary = OrangePML,           // สีหลักคือส้ม
-    secondary = GrayText,
-    tertiary = OrangeDark,
-    background = DarkBg,           // พื้นหลังดำ
-    surface = CardBg,              // พื้นผิวการ์ดเทาเข้ม
-    onPrimary = Color.White,
-    onBackground = WhiteText,
-    onSurface = WhiteText,
-    error = ErrorRed
+// Light theme matching the wisaCore web app (ink text on a warm off-white
+// canvas, lime accent) — replaces the old dark "PML Tech" orange scheme.
+private val LightColorScheme = lightColorScheme(
+    primary = Ink,
+    onPrimary = Lemon,
+    secondary = Muted,
+    tertiary = Lemon,
+    background = Canvas,
+    onBackground = Ink,
+    surface = CardWhite,
+    onSurface = Ink,
+    error = ErrorText
 )
 
 @Composable
 fun WISAHANDHELDTheme(
-    // บังคับเป็น Dark Theme เสมอ (ลบระบบ dynamicColor ออกเพื่อให้คุมโทน)
     content: @Composable () -> Unit
 ) {
-    val colorScheme = DarkColorScheme
+    val colorScheme = LightColorScheme
     val view = LocalView.current
 
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // ตั้งค่าสี Status Bar (แถบบนสุดของเครื่อง) ให้เป็นสีดำเข้ากับแอป
-            window.statusBarColor = DarkBg.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            window.statusBarColor = Canvas.toArgb()
+            // Light background → dark status bar icons/text.
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
         }
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography, // ใช้ค่ามาตรฐานจากไฟล์ Type.kt
+        typography = Typography,
         content = content
     )
 }
