@@ -124,8 +124,20 @@ class MainActivity : ComponentActivity() {
                         else -> PartListScreen(
                             deviceCode = deviceCode,
                             jobs = jobs,
+
                             onSelectJob = { job ->
-                                scope.launch { delay(150); selectedJob = job; currentScreen = "SelectAddress" }
+                                scope.launch {
+                                    delay(150)
+                                    selectedJob = job
+                                    currentScreen = "SelectAddress"
+                                }
+                            },
+
+                            onBack = {
+                                scope.launch {
+                                    delay(120)
+                                    currentScreen = "Home"
+                                }
                             }
                         )
                     }
