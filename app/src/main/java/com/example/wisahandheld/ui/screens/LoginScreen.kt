@@ -16,10 +16,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wisahandheld.ui.components.BoxedInput
+import com.example.wisahandheld.ui.components.PhoneDeviceIcon
 import com.example.wisahandheld.ui.components.PrimaryButton
 import com.example.wisahandheld.ui.components.Sparkle
 import com.example.wisahandheld.ui.theme.Canvas
 import com.example.wisahandheld.ui.theme.Ink
+import com.example.wisahandheld.ui.theme.Lemon
 import com.example.wisahandheld.ui.theme.Muted
 
 /**
@@ -52,7 +54,7 @@ fun LoginScreen(onLoggedIn: (deviceCode: String) -> Unit) {
                     .background(Ink, RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "📱", fontSize = 24.sp)
+                PhoneDeviceIcon(tint = Lemon, sizeDp = 24.dp)
             }
             Spacer(modifier = Modifier.height(20.dp))
             Text(text = "รหัสเครื่อง", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)

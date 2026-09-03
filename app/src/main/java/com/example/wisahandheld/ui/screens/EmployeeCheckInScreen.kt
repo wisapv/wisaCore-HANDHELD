@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wisahandheld.ui.components.BoxedInput
+import com.example.wisahandheld.ui.components.IdCardIcon
 import com.example.wisahandheld.ui.components.PrimaryButton
 import com.example.wisahandheld.ui.components.Sparkle
 import com.example.wisahandheld.ui.theme.Canvas
@@ -53,7 +54,7 @@ fun EmployeeCheckInScreen(deviceCode: String, onCheckedIn: (employeeId: String, 
                     .background(Lemon.copy(alpha = 0.35f), RoundedCornerShape(50)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "🪪", fontSize = 24.sp)
+                IdCardIcon(tint = Ink, sizeDp = 24.dp)
             }
             Spacer(modifier = Modifier.height(20.dp))
             Text(text = "ใครถือเครื่องนี้อยู่", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)

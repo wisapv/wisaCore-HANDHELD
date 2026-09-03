@@ -10,10 +10,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.ui.components.BoxPackageIcon
 import com.example.wisahandheld.ui.components.PrimaryButton
 import com.example.wisahandheld.ui.components.Sparkle
 import com.example.wisahandheld.ui.theme.Canvas
 import com.example.wisahandheld.ui.theme.Ink
+import com.example.wisahandheld.ui.theme.Lemon
 import com.example.wisahandheld.ui.theme.Muted
 
 /** Screen 1 — shown once before Login, on every cold start of the app. */
@@ -38,7 +40,7 @@ fun OverviewScreen(onGetStarted: () -> Unit) {
                         .background(Ink, RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "📦", fontSize = 24.sp)
+                    BoxPackageIcon(tint = Lemon, sizeDp = 24.dp)
                 }
                 Spacer(modifier = Modifier.height(22.dp))
                 Text(

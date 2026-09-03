@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.wisahandheld.data.Api
 import com.example.wisahandheld.ui.screens.*
 import com.example.wisahandheld.ui.theme.Canvas
 import com.example.wisahandheld.ui.theme.Ink
@@ -31,19 +32,27 @@ class MainActivity : ComponentActivity() {
 
                 val scope = rememberCoroutineScope()
 
-                // 🌟 Dummy data — replace with a real fetch once the backend
-                // has an endpoint for "what is device X assigned to for
-                // batch Y" (see wisaCore-DASHINV: AssignHandheld.jsx +
-                // the not-yet-built Send to Handheld persistence).
-                val jobs = remember {
-                    listOf(
-                        ZoneJob("FN4-01", "สมชาย", 46),
-                        ZoneJob("SQ-03", "สมชาย", 40),
-                        ZoneJob("TR2-02", "มานะ", 53)
-                    )
+                // Real jobs — fetched from the backend right after check-in
+                // (see onCheckedIn below). "idle"/"loading"/"ready"/"error".
+                var jobsStatus by remember { mutableStateOf("idle") }
+                var jobs by remember { mutableStateOf<List<ZoneJob>>(emptyList()) }
+
+                fun loadJobs() {
+                    scope.launch {
+                        jobsStatus = "loading"
+                        val batchId = Api.fetchCurrentBatchId()
+                        if (batchId == null) {
+                            jobsStatus = "error"
+                            return@launch
+                        }
+                        val result = Api.fetchMyJobs(batchId, deviceCode)
+                        jobs = result.map { ZoneJob(code = it.code, pic = it.pic, itemCount = it.itemCount) }
+                        jobsStatus = "ready"
+                    }
                 }
+
                 val totalCount = jobs.sumOf { it.itemCount }
-                val scannedCount = 12
+                val scannedCount = 0 // TODO: not tracked yet — needs real scan submission (Input Stock "Send")
 
                 val addressesForJob = remember(selectedJob) {
                     listOf(
@@ -84,6 +93,7 @@ class MainActivity : ComponentActivity() {
                                 employeeName = id
                                 employeePhone = phone
                                 currentScreen = "Home"
+                                loadJobs()
                             }
                         }
                     )
@@ -100,13 +110,25 @@ class MainActivity : ComponentActivity() {
                         onChangePerson = { scope.launch { delay(150); currentScreen = "CheckIn" } }
                     )
 
-                    "PartList" -> PartListScreen(
-                        deviceCode = deviceCode,
-                        jobs = jobs,
-                        onSelectJob = { job ->
-                            scope.launch { delay(150); selectedJob = job; currentScreen = "SelectAddress" }
-                        }
-                    )
+                    "PartList" -> when (jobsStatus) {
+                        "loading", "idle" -> Box(
+                            modifier = Modifier.fillMaxSize().background(Canvas),
+                            contentAlignment = Alignment.Center
+                        ) { Text(text = "กำลังโหลดงาน…", color = Ink) }
+
+                        "error" -> Box(
+                            modifier = Modifier.fillMaxSize().background(Canvas),
+                            contentAlignment = Alignment.Center
+                        ) { Text(text = "โหลดงานไม่สำเร็จ — เช็คว่าเครื่องต่อ WiFi เดียวกับเซิร์ฟเวอร์อยู่ไหม", color = Ink) }
+
+                        else -> PartListScreen(
+                            deviceCode = deviceCode,
+                            jobs = jobs,
+                            onSelectJob = { job ->
+                                scope.launch { delay(150); selectedJob = job; currentScreen = "SelectAddress" }
+                            }
+                        )
+                    }
 
                     "SelectAddress" -> SelectAddressScreen(
                         zoneCode = selectedJob?.code ?: "",
@@ -145,13 +167,13 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
-                    "FreeZone" -> Box(
-                        modifier = Modifier.fillMaxSize().background(Canvas),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // TODO: Free Zone screen — open scan, no list, no assignment.
-                        Text(text = "Free Zone — ยังไม่ได้ออกแบบ", color = Ink)
-                    }
+                    "FreeZone" -> FreeZoneScreen(
+                        onSend = { _ ->
+                            // TODO: POST the scanned full-box tallies to the backend.
+                            scope.launch { delay(150); currentScreen = "Home" }
+                        },
+                        onBack = { scope.launch { delay(120); currentScreen = "Home" } }
+                    )
                 }
             }
         }

@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.ui.components.ChecklistIcon
+import com.example.wisahandheld.ui.components.ScanFrameIcon
 import com.example.wisahandheld.ui.theme.BorderLight
 import com.example.wisahandheld.ui.theme.Canvas
 import com.example.wisahandheld.ui.theme.CardWhite
@@ -52,7 +54,7 @@ fun HomeScreen(
                 Text(text = "$deviceCode · $phone", color = Muted, fontSize = 9.sp)
             }
             Text(
-                text = "🔄 เปลี่ยนคน",
+                text = "เปลี่ยนคน",
                 color = Ink,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
@@ -105,7 +107,7 @@ fun HomeScreen(
             Box(
                 modifier = Modifier.size(42.dp).background(Ink.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
-            ) { Text(text = "📋", fontSize = 19.sp) }
+            ) { ChecklistIcon(tint = Ink, sizeDp = 19.dp) }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Part list", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
@@ -129,7 +131,7 @@ fun HomeScreen(
             Box(
                 modifier = Modifier.size(42.dp).background(Lemon.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
-            ) { Text(text = "🔲", fontSize = 19.sp) }
+            ) { ScanFrameIcon(tint = Ink, sizeDp = 19.dp) }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Free zone", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
