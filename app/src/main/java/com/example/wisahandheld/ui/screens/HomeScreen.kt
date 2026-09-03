@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.ui.components.BackButton
 import com.example.wisahandheld.ui.components.ChecklistIcon
 import com.example.wisahandheld.ui.components.ScanFrameIcon
 import com.example.wisahandheld.ui.theme.BorderLight
@@ -28,11 +29,11 @@ fun HomeScreen(
     employeeName: String,
     phone: String,
     zonesToday: Int,
-    scannedCount: Int,
-    totalCount: Int,
+    remainingCount: Int,
     onOpenPartList: () -> Unit,
     onOpenFreeZone: () -> Unit,
-    onChangePerson: () -> Unit
+    onChangePerson: () -> Unit,
+    onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -86,8 +87,8 @@ fun HomeScreen(
                     .border(1.dp, BorderLight, RoundedCornerShape(14.dp))
                     .padding(12.dp)
             ) {
-                Text(text = "$scannedCount/$totalCount", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                Text(text = "SCANNED", color = Muted, fontSize = 8.5.sp, fontWeight = FontWeight.Medium)
+                Text(text = "$remainingCount", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text(text = "REMAINING", color = Muted, fontSize = 8.5.sp, fontWeight = FontWeight.Medium)
             }
         }
 
@@ -139,5 +140,7 @@ fun HomeScreen(
             }
             Text(text = "›", color = Muted, fontSize = 18.sp)
         }
+        Spacer(modifier = Modifier.weight(1f))
+        BackButton(onClick = onBack)
     }
 }

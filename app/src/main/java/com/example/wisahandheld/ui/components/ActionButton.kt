@@ -47,3 +47,21 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier, onClick: () -> 
         Text(text = text, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
+
+/**
+ * Small "‹ Back" pill — ink background, lemon text — used at the top of
+ * every screen except Overview to go to the previous screen in the flow.
+ * Deliberately compact (not full-width) so it doesn't compete with the
+ * screen's main content/actions.
+ */
+@Composable
+fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(Ink, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(text = "‹ Back", color = Lemon, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    }
+}

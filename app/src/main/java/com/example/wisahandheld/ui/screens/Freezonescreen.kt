@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.ui.components.BackButton
 import com.example.wisahandheld.ui.components.BoxPackageIcon
 import com.example.wisahandheld.ui.components.ScanFrameIcon
 import com.example.wisahandheld.ui.components.Sparkle
@@ -231,6 +232,8 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                 fontWeight = FontWeight.Medium
             )
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        BackButton(onClick = onBack)
     }
 }
 

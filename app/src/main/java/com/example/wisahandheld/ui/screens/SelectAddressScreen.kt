@@ -20,24 +20,10 @@ import com.example.wisahandheld.ui.theme.Ink
 import com.example.wisahandheld.ui.theme.Lemon
 import com.example.wisahandheld.ui.theme.Muted
 
+enum class AddressStatus { DONE, CURRENT, PENDING }
+data class AddressRow(val code: String, val status: AddressStatus, val remain: Int)
 
-enum class AddressStatus {
-    DONE,
-    CURRENT,
-    PENDING
-}
-
-
-data class AddressRow(
-    val code: String,
-    val status: AddressStatus,
-    val remain: Int
-)
-
-
-/**
- * Screen 6 — Select Address
- */
+/** Screen 6 — one job (ZoneJob) can still contain several physical addresses to visit one by one. */
 @Composable
 fun SelectAddressScreen(
     zoneCode: String,
@@ -46,173 +32,54 @@ fun SelectAddressScreen(
     onSelectAddress: (AddressRow) -> Unit,
     onBack: () -> Unit
 ) {
-
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Canvas)
+            .padding(20.dp)
     ) {
+        Text(text = "$zoneCode · $employeeName", color = Muted, fontSize = 9.sp)
+        Text(text = "Select Address", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Spacer(modifier = Modifier.height(14.dp))
 
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp)
-        ) {
-
-
-            Text(
-                text = "$zoneCode · $employeeName",
-                color = Muted,
-                fontSize = 9.sp
-            )
-
-
-            Text(
-                text = "Select Address",
-                color = Ink,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
-
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(bottom = 70.dp)
-            ) {
-
-
-                addresses.forEach { addr ->
-
-
-                    val bg = when (addr.status) {
-
-                        AddressStatus.DONE ->
-                            Ink
-
-                        AddressStatus.CURRENT ->
-                            Lemon
-
-                        AddressStatus.PENDING ->
-                            CardWhite
-                    }
-
-
-                    val border = when (addr.status) {
-
-                        AddressStatus.DONE ->
-                            Ink
-
-                        AddressStatus.CURRENT ->
-                            Lemon
-
-                        AddressStatus.PENDING ->
-                            BorderLight
-                    }
-
-
-                    val textColor =
-                        if (addr.status == AddressStatus.DONE)
-                            CardWhite
-                        else
-                            Ink
-
-
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                bg,
-                                RoundedCornerShape(13.dp)
-                            )
-                            .border(
-                                1.dp,
-                                border,
-                                RoundedCornerShape(13.dp)
-                            )
-                            .clickable {
-                                onSelectAddress(addr)
-                            }
-                            .padding(
-                                horizontal = 15.dp,
-                                vertical = 13.dp
-                            ),
-
-                        horizontalArrangement = Arrangement.SpaceBetween,
-
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-
-                        Text(
-                            text = addr.code,
-                            color = textColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-
-
-
-                        when (addr.status) {
-
-
-                            AddressStatus.DONE ->
-
-                                Text(
-                                    text = "✓ Done",
-                                    color = Lemon,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-
-
-                            AddressStatus.CURRENT ->
-
-                                Text(
-                                    text = "${addr.remain} remain",
-                                    color = Ink.copy(alpha = 0.65f),
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-
-
-                            AddressStatus.PENDING ->
-
-                                Text(
-                                    text = "${addr.remain} remain",
-                                    color = Muted,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                        }
-
-                    }
-
-                }
-
-            }
-
+        if (addresses.isEmpty()) {
+            Text(text = "ไม่มี address ในโซนนี้", color = Muted, fontSize = 11.sp)
         }
 
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+            addresses.forEach { addr ->
+                val bg = when (addr.status) {
+                    AddressStatus.DONE -> Ink
+                    AddressStatus.CURRENT -> Lemon
+                    AddressStatus.PENDING -> CardWhite
+                }
+                val border = when (addr.status) {
+                    AddressStatus.DONE -> Ink
+                    AddressStatus.CURRENT -> Lemon
+                    AddressStatus.PENDING -> BorderLight
+                }
+                val textColor = if (addr.status == AddressStatus.DONE) CardWhite else Ink
 
-
-        // Back Button มาตรฐานสำหรับ Zebra
-        BackButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(20.dp)
-        )
-
-
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(bg, RoundedCornerShape(13.dp))
+                        .border(1.dp, border, RoundedCornerShape(13.dp))
+                        .clickable { onSelectAddress(addr) }
+                        .padding(horizontal = 15.dp, vertical = 13.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = addr.code, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    when (addr.status) {
+                        AddressStatus.DONE -> Text(text = "✓ Done", color = Lemon, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                        AddressStatus.CURRENT -> Text(text = "${addr.remain} remain", color = Ink.copy(alpha = 0.65f), fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                        AddressStatus.PENDING -> Text(text = "${addr.remain} remain", color = Muted, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        BackButton(onClick = onBack)
     }
-
 }
