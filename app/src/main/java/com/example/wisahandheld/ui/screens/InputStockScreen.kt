@@ -42,19 +42,27 @@ data class ScanResult(val kbn: String, val address: String, val partName: String
  * no barcode source and must always be typed by the operator (gray-green
  * dot). "Not Found" sets qty to 0 but is recorded as a distinct status —
  * NOT the same thing as a confirmed zero count.
+ *
+ * `isEdit` = the scanned/tapped part was already counted before (a
+ * re-scan) — Box/Pcs/Seq start pre-filled with what was submitted last
+ * time instead of blank, so the operator is correcting, not starting over.
  */
 @Composable
 fun InputStockScreen(
     zoneCode: String,
     addressCode: String,
     scan: ScanResult,
+    isEdit: Boolean = false,
+    initialBox: String = "",
+    initialPcs: String = "",
+    initialSeq: String = "1",
     onNotFound: () -> Unit,
     onBack: () -> Unit,
     onSend: (box: String, pcs: String, seq: String) -> Unit
 ) {
-    var box by remember { mutableStateOf("") }
-    var pcs by remember { mutableStateOf("") }
-    var seq by remember { mutableStateOf("1") }
+    var box by remember(scan) { mutableStateOf(initialBox) }
+    var pcs by remember(scan) { mutableStateOf(initialPcs) }
+    var seq by remember(scan) { mutableStateOf(initialSeq) }
 
     Column(
         modifier = Modifier
@@ -63,7 +71,21 @@ fun InputStockScreen(
             .padding(20.dp)
     ) {
         Text(text = "$zoneCode · $addressCode", color = Muted, fontSize = 9.sp)
-        Text(text = "Input Stock", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "Input Stock", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            if (isEdit) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "แก้ไขรายการที่นับไปแล้ว",
+                    color = Ink,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .background(ManualAccent.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(14.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

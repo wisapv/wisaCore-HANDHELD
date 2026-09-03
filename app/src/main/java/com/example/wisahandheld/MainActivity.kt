@@ -44,8 +44,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var selectedJob by remember { mutableStateOf<ZoneJob?>(null) }
-                var selectedAddress by remember { mutableStateOf<AddressRow?>(null) }
-                var selectedKbnRow by remember { mutableStateOf<KbnRow?>(null) }
+                // The part matched (scanned/typed/tapped) in the zone screen — carries
+                // everything Input Stock needs, plus whether it was already counted.
+                var selectedPart by remember { mutableStateOf<KbnRow?>(null) }
                 var currentBatchId by remember { mutableStateOf<String?>(null) }
 
                 val scope = rememberCoroutineScope()
@@ -54,11 +55,8 @@ class MainActivity : ComponentActivity() {
                 var jobsStatus by remember { mutableStateOf("idle") }
                 var jobs by remember { mutableStateOf<List<ZoneJob>>(emptyList()) }
 
-                var addressesStatus by remember { mutableStateOf("idle") }
-                var addresses by remember { mutableStateOf<List<AddressRow>>(emptyList()) }
-
-                var addressDetailStatus by remember { mutableStateOf("idle") }
-                var kbnRows by remember { mutableStateOf<List<KbnRow>>(emptyList()) }
+                var zonePartsStatus by remember { mutableStateOf("idle") }
+                var zoneParts by remember { mutableStateOf<List<KbnRow>>(emptyList()) }
 
                 fun loadJobs() {
                     scope.launch {
@@ -79,70 +77,47 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun loadAddresses(job: ZoneJob) {
+                // Replaces the old loadAddresses + loadAddressDetail two-step —
+                // one flat fetch of everything in the zone (see AddressDetailScreen).
+                fun loadZoneParts(job: ZoneJob) {
                     scope.launch {
-                        addressesStatus = "loading"
+                        zonePartsStatus = "loading"
                         val batchId = currentBatchId ?: Api.fetchCurrentBatchId()
                         if (batchId == null) {
-                            addressesStatus = "error"
+                            zonePartsStatus = "error"
                             return@launch
                         }
                         currentBatchId = batchId
-                        val result = Api.fetchJobAddresses(batchId, deviceCode, job.pic, job.code)
+                        val result = Api.fetchJobZoneParts(batchId, deviceCode, job.pic, job.code)
                         if (result == null) {
-                            // A real request failure (timeout/connection reset/etc.) —
-                            // NOT the same as "this zone genuinely has 0 addresses".
-                            // Must not silently show as empty, or a transient network
-                            // hiccup looks identical to real data being gone.
-                            addressesStatus = "error"
+                            zonePartsStatus = "error"
                             return@launch
                         }
-                        // remain/done now come from the backend's real
-                        // handheld_stock_counts (submit-count), not a guess.
-                        addresses = result.map {
-                            AddressRow(code = it.addr, status = if (it.done) AddressStatus.DONE else AddressStatus.PENDING, remain = it.remain)
-                        }
-                        addressesStatus = "ready"
-                    }
-                }
-
-                fun loadAddressDetail(job: ZoneJob, address: AddressRow) {
-                    scope.launch {
-                        addressDetailStatus = "loading"
-                        val batchId = currentBatchId ?: Api.fetchCurrentBatchId()
-                        if (batchId == null) {
-                            addressDetailStatus = "error"
-                            return@launch
-                        }
-                        currentBatchId = batchId
-                        val result = Api.fetchJobAddressDetail(batchId, deviceCode, job.pic, job.code, address.code)
-                        if (result == null) {
-                            addressDetailStatus = "error"
-                            return@launch
-                        }
-                        kbnRows = result.map {
+                        zoneParts = result.map {
                             KbnRow(
                                 supplier = it.supplier, kbn = it.kbn, address = it.address, partName = it.partName,
-                                partNo = it.partNo, shop = it.shop, dock = it.dock, sPlant = it.sPlant, sDock = it.sDock, qty = it.qty
+                                partNo = it.partNo, shop = it.shop, dock = it.dock, sPlant = it.sPlant, sDock = it.sDock,
+                                qty = it.qty, counted = it.counted, countedQty = it.countedQty, countedBox = it.countedBox,
+                                countedPcs = it.countedPcs, countedSeq = it.countedSeq
                             )
                         }
-                        addressDetailStatus = "ready"
+                        zonePartsStatus = "ready"
                     }
                 }
 
                 val remainingCount = jobs.sumOf { it.itemCount } // itemCount is already "remaining" — see my-jobs backend
 
-                // The row tapped in Address Detail becomes the "scanned"
-                // result on Input Stock — no real barcode hardware wired in
-                // yet (see DataWedge TODO), so this stands in for a scan.
-                // Q'ty defaults to 1 (not tracked by the backend yet either).
-                val scanResult = remember(selectedKbnRow) {
-                    val row = selectedKbnRow
+                // The part matched on the zone screen becomes the "scanned" result
+                // on Input Stock. If it was already counted, qty shown is what was
+                // submitted last time (edit mode); otherwise it's the expected qty
+                // from the batch's own data.
+                val scanResult = remember(selectedPart) {
+                    val row = selectedPart
                     ScanResult(
                         kbn = row?.kbn ?: "",
-                        address = row?.address ?: (selectedAddress?.code ?: ""),
+                        address = row?.address ?: "",
                         partName = row?.partName ?: "",
-                        qty = 1
+                        qty = row?.countedQty ?: row?.qty?.toIntOrNull() ?: 0
                     )
                 }
 
@@ -218,42 +193,15 @@ class MainActivity : ComponentActivity() {
                                 scope.launch {
                                     delay(150)
                                     selectedJob = job
-                                    currentScreen = "SelectAddress"
-                                    loadAddresses(job)
+                                    currentScreen = "AddressDetail"
+                                    loadZoneParts(job)
                                 }
                             },
                             onBack = { scope.launch { delay(120); currentScreen = "Home" } }
                         )
                     }
 
-                    "SelectAddress" -> when (addressesStatus) {
-                        "loading", "idle" -> Box(
-                            modifier = Modifier.fillMaxSize().background(Canvas),
-                            contentAlignment = Alignment.Center
-                        ) { Text(text = "กำลังโหลด address…", color = Ink) }
-
-                        "error" -> Box(
-                            modifier = Modifier.fillMaxSize().background(Canvas).clickable { selectedJob?.let { loadAddresses(it) } },
-                            contentAlignment = Alignment.Center
-                        ) { Text(text = "โหลด address ไม่สำเร็จ (แตะเพื่อลองใหม่)", color = Ink) }
-
-                        else -> SelectAddressScreen(
-                            zoneCode = selectedJob?.code ?: "",
-                            employeeName = employeeName,
-                            addresses = addresses,
-                            onSelectAddress = { addr ->
-                                scope.launch {
-                                    delay(150)
-                                    selectedAddress = addr
-                                    currentScreen = "AddressDetail"
-                                    selectedJob?.let { loadAddressDetail(it, addr) }
-                                }
-                            },
-                            onBack = { scope.launch { delay(120); currentScreen = "PartList" } }
-                        )
-                    }
-
-                    "AddressDetail" -> when (addressDetailStatus) {
+                    "AddressDetail" -> when (zonePartsStatus) {
                         "loading", "idle" -> Box(
                             modifier = Modifier.fillMaxSize().background(Canvas),
                             contentAlignment = Alignment.Center
@@ -261,35 +209,35 @@ class MainActivity : ComponentActivity() {
 
                         "error" -> Box(
                             modifier = Modifier.fillMaxSize().background(Canvas).clickable {
-                                val job = selectedJob; val address = selectedAddress
-                                if (job != null && address != null) loadAddressDetail(job, address)
+                                selectedJob?.let { loadZoneParts(it) }
                             },
                             contentAlignment = Alignment.Center
                         ) { Text(text = "โหลดรายการไม่สำเร็จ (แตะเพื่อลองใหม่)", color = Ink) }
 
                         else -> AddressDetailScreen(
                             zoneCode = selectedJob?.code ?: "",
-                            addressCode = selectedAddress?.code ?: "",
-                            remain = kbnRows.size,
-                            rows = kbnRows,
-                            onSelectRow = { row ->
-                                scope.launch { delay(150); selectedKbnRow = row; currentScreen = "InputStock" }
+                            parts = zoneParts,
+                            onMatch = { row ->
+                                scope.launch { delay(150); selectedPart = row; currentScreen = "InputStock" }
                             },
-                            onBack = { scope.launch { delay(120); currentScreen = "SelectAddress" } },
-                            onEdit = { /* TODO: manual edit mode for this address's counts */ }
+                            onBack = { scope.launch { delay(120); currentScreen = "PartList" } }
                         )
                     }
 
                     "InputStock" -> InputStockScreen(
                         zoneCode = selectedJob?.code ?: "",
-                        addressCode = selectedAddress?.code ?: "",
+                        addressCode = selectedPart?.address ?: "",
                         scan = scanResult,
+                        isEdit = selectedPart?.counted == true,
+                        initialBox = selectedPart?.countedBox ?: "",
+                        initialPcs = selectedPart?.countedPcs ?: "",
+                        initialSeq = selectedPart?.countedSeq ?: "1",
                         onNotFound = {
-                            val job = selectedJob; val address = selectedAddress; val row = selectedKbnRow; val batchId = currentBatchId
+                            val job = selectedJob; val row = selectedPart; val batchId = currentBatchId
                             scope.launch {
-                                if (job != null && address != null && row != null && batchId != null) {
+                                if (job != null && row != null && batchId != null) {
                                     Api.submitCount(
-                                        batchId = batchId, deviceId = deviceCode, pic = job.pic, shortAddr = job.code, addr = address.code,
+                                        batchId = batchId, deviceId = deviceCode, pic = job.pic, shortAddr = job.code, addr = row.address,
                                         kbn = row.kbn, partNo = row.partNo, partName = row.partName, supplier = row.supplier,
                                         shop = row.shop, dock = row.dock, sPlant = row.sPlant, sDock = row.sDock,
                                         // Not Found → qty forced to 0, but flagged separately from a
@@ -300,16 +248,16 @@ class MainActivity : ComponentActivity() {
                                 }
                                 delay(150)
                                 currentScreen = "AddressDetail"
-                                if (job != null && address != null) loadAddressDetail(job, address)
+                                job?.let { loadZoneParts(it) }
                             }
                         },
                         onBack = { scope.launch { delay(120); currentScreen = "AddressDetail" } },
                         onSend = { box, pcs, seq ->
-                            val job = selectedJob; val address = selectedAddress; val row = selectedKbnRow; val batchId = currentBatchId
+                            val job = selectedJob; val row = selectedPart; val batchId = currentBatchId
                             scope.launch {
-                                if (job != null && address != null && row != null && batchId != null) {
+                                if (job != null && row != null && batchId != null) {
                                     Api.submitCount(
-                                        batchId = batchId, deviceId = deviceCode, pic = job.pic, shortAddr = job.code, addr = address.code,
+                                        batchId = batchId, deviceId = deviceCode, pic = job.pic, shortAddr = job.code, addr = row.address,
                                         kbn = row.kbn, partNo = row.partNo, partName = row.partName, supplier = row.supplier,
                                         shop = row.shop, dock = row.dock, sPlant = row.sPlant, sDock = row.sDock,
                                         qty = scanResult.qty, box = box, pcs = pcs, seq = seq, notFound = false,
@@ -318,7 +266,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 delay(150)
                                 currentScreen = "AddressDetail"
-                                if (job != null && address != null) loadAddressDetail(job, address)
+                                job?.let { loadZoneParts(it) }
                             }
                         }
                     )

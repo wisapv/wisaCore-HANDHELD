@@ -43,6 +43,40 @@ object Api {
     )
     data class Device(val id: String, val name: String, val status: String)
 
+    /** One part somewhere in an assigned zone — flat across all its addresses (replaces address-by-address paging). */
+    data class ZonePart(
+        val supplier: String, val shop: String, val dock: String, val sPlant: String, val sDock: String,
+        val kbn: String, val address: String, val partName: String, val partNo: String, val qty: String,
+        val counted: Boolean, val countedQty: Int?, val countedBox: String?, val countedPcs: String?,
+        val countedSeq: String?, val countedNotFound: Boolean
+    )
+
+    /** GET /api/handheld-assign/job-zone-parts — every part in a zone, flat, with counted/previous-submission info for edit mode. */
+    suspend fun fetchJobZoneParts(batchId: String, deviceId: String, pic: String, shortAddr: String): List<ZonePart>? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val json = get(
+                    "$BASE_URL/api/handheld-assign/job-zone-parts?batchId=${enc(batchId)}&deviceId=${enc(deviceId)}" +
+                            "&pic=${enc(pic)}&shortAddr=${enc(shortAddr)}"
+                )
+                val arr: JSONArray = json.optJSONArray("data") ?: JSONArray()
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    ZonePart(
+                        supplier = o.optString("supplier"), shop = o.optString("shop"), dock = o.optString("dock"),
+                        sPlant = o.optString("sPlant"), sDock = o.optString("sDock"), kbn = o.optString("kbn"),
+                        address = o.optString("address"), partName = o.optString("partName"), partNo = o.optString("partNo"),
+                        qty = o.optString("qty"), counted = o.optBoolean("counted"),
+                        countedQty = if (o.isNull("countedQty")) null else o.optInt("countedQty"),
+                        countedBox = if (o.isNull("countedBox")) null else o.optString("countedBox"),
+                        countedPcs = if (o.isNull("countedPcs")) null else o.optString("countedPcs"),
+                        countedSeq = if (o.isNull("countedSeq")) null else o.optString("countedSeq"),
+                        countedNotFound = o.optBoolean("countedNotFound")
+                    )
+                }
+            }.onFailure { Log.e(TAG, "fetchJobZoneParts failed", it) }.getOrNull()
+        }
+
     /** GET /api/handheld-devices — the registered device list (Login shows the active ones as a picker). */
     suspend fun fetchActiveDevices(): List<Device>? = withContext(Dispatchers.IO) {
         runCatching {
