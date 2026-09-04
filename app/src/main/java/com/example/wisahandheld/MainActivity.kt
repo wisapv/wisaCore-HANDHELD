@@ -47,6 +47,14 @@ class MainActivity : ComponentActivity() {
                 // The part matched (scanned/typed/tapped) in the zone screen — carries
                 // everything Input Stock needs, plus whether it was already counted.
                 var selectedPart by remember { mutableStateOf<KbnRow?>(null) }
+                // Captured when the part is matched (scanned/tapped) — see
+                // AddressDetailScreen's onMatch. qtyPerBox comes from the
+                // Kanban QR itself; initialBox is 1 if that match WAS a real
+                // scan (this scan already counts as box #1), or 0 if it was
+                // just a list tap (no box confirmed yet, waiting on a real
+                // scan on Input Stock).
+                var selectedQtyPerBox by remember { mutableStateOf(0) }
+                var selectedInitialBox by remember { mutableStateOf(0) }
                 var currentBatchId by remember { mutableStateOf<String?>(null) }
 
                 val scope = rememberCoroutineScope()
@@ -108,16 +116,14 @@ class MainActivity : ComponentActivity() {
                 val remainingCount = jobs.sumOf { it.itemCount } // itemCount is already "remaining" — see my-jobs backend
 
                 // The part matched on the zone screen becomes the "scanned" result
-                // on Input Stock. If it was already counted, qty shown is what was
-                // submitted last time (edit mode); otherwise it's the expected qty
-                // from the batch's own data.
-                val scanResult = remember(selectedPart) {
+                // on Input Stock.
+                val scanResult = remember(selectedPart, selectedQtyPerBox) {
                     val row = selectedPart
                     ScanResult(
                         kbn = row?.kbn ?: "",
                         address = row?.address ?: "",
                         partName = row?.partName ?: "",
-                        qty = row?.countedQty ?: row?.qty?.toIntOrNull() ?: 0
+                        qtyPerBox = selectedQtyPerBox
                     )
                 }
 
@@ -217,8 +223,23 @@ class MainActivity : ComponentActivity() {
                         else -> AddressDetailScreen(
                             zoneCode = selectedJob?.code ?: "",
                             parts = zoneParts,
-                            onMatch = { row ->
-                                scope.launch { delay(150); selectedPart = row; currentScreen = "InputStock" }
+                            onMatch = { row, parsed ->
+                                scope.launch {
+                                    delay(150)
+                                    selectedPart = row
+                                    // qtyPerBox comes from this scan if we have one, otherwise
+                                    // falls back to the batch's own expected qty for this part
+                                    // (there's no reliable way to recover it from a past
+                                    // submission's total alone, since that total already mixes
+                                    // in Pcs too).
+                                    selectedQtyPerBox = parsed?.qtyPerBox ?: row.qty.toIntOrNull() ?: 0
+                                    selectedInitialBox = when {
+                                        row.counted -> row.countedBox?.toIntOrNull() ?: 1
+                                        parsed != null -> 1 // this scan already counted as box #1
+                                        else -> 0 // opened via list tap — no box confirmed yet
+                                    }
+                                    currentScreen = "InputStock"
+                                }
                             },
                             onBack = { scope.launch { delay(120); currentScreen = "PartList" } }
                         )
@@ -229,9 +250,9 @@ class MainActivity : ComponentActivity() {
                         addressCode = selectedPart?.address ?: "",
                         scan = scanResult,
                         isEdit = selectedPart?.counted == true,
-                        initialBox = selectedPart?.countedBox ?: "",
+                        initialBox = selectedInitialBox,
                         initialPcs = selectedPart?.countedPcs ?: "",
-                        initialSeq = selectedPart?.countedSeq ?: "1",
+                        initialSeq = selectedPart?.countedSeq ?: "",
                         onNotFound = {
                             val job = selectedJob; val row = selectedPart; val batchId = currentBatchId
                             scope.launch {
@@ -252,7 +273,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onBack = { scope.launch { delay(120); currentScreen = "AddressDetail" } },
-                        onSend = { box, pcs, seq ->
+                        onSend = { qty, box, pcs, seq ->
                             val job = selectedJob; val row = selectedPart; val batchId = currentBatchId
                             scope.launch {
                                 if (job != null && row != null && batchId != null) {
@@ -260,7 +281,9 @@ class MainActivity : ComponentActivity() {
                                         batchId = batchId, deviceId = deviceCode, pic = job.pic, shortAddr = job.code, addr = row.address,
                                         kbn = row.kbn, partNo = row.partNo, partName = row.partName, supplier = row.supplier,
                                         shop = row.shop, dock = row.dock, sPlant = row.sPlant, sDock = row.sDock,
-                                        qty = scanResult.qty, box = box, pcs = pcs, seq = seq, notFound = false,
+                                        // qty = Box × Qty-per-Box (from the QR) + Pcs — computed
+                                        // on the Input Stock screen itself, see InputStockScreen.kt.
+                                        qty = qty, box = box.toString(), pcs = pcs, seq = seq, notFound = false,
                                         employeeName = employeeName, employeePhone = employeePhone
                                     )
                                 }

@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.data.KbnQr
+import com.example.wisahandheld.data.ParsedKbn
 import com.example.wisahandheld.ui.components.BackButton
 import com.example.wisahandheld.ui.components.ScanFrameIcon
 import com.example.wisahandheld.ui.theme.BorderLight
@@ -77,7 +79,7 @@ data class KbnRow(
 fun AddressDetailScreen(
     zoneCode: String,
     parts: List<KbnRow>,
-    onMatch: (KbnRow) -> Unit,
+    onMatch: (KbnRow, ParsedKbn?) -> Unit,
     onBack: () -> Unit
 ) {
     var scanInput by remember { mutableStateOf("") }
@@ -88,11 +90,22 @@ fun AddressDetailScreen(
     fun tryMatch(raw: String) {
         val code = raw.trim()
         if (code.isEmpty()) return
-        val match = parts.firstOrNull { it.kbn == code || it.partNo == code }
+
+        // A real Kanban tag is always the full 80-char fixed-width QR — try
+        // that first so we also capture Qty per Box for Input Stock. Typing
+        // (or a shorter test scan) falls back to a plain KBN/Part no. match
+        // with no box-count info yet.
+        val parsed = KbnQr.parse(code)
+        val match = if (parsed != null) {
+            parts.firstOrNull { it.kbn == parsed.kbnCode || it.partNo == parsed.partNumber }
+        } else {
+            parts.firstOrNull { it.kbn == code || it.partNo == code }
+        }
+
         if (match != null) {
             noMatch = false
             scanInput = ""
-            onMatch(match)
+            onMatch(match, parsed)
         } else {
             noMatch = true
         }
@@ -159,31 +172,45 @@ fun AddressDetailScreen(
             Text(text = "นับครบทุกรายการในโซนนี้แล้ว", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
         }
 
+        val allSorted = remember(parts) { parts.sortedBy { it.counted } } // not-yet-counted first, counted ones after
+
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(remaining) { row ->
+            items(allSorted) { row ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(CardWhite, RoundedCornerShape(11.dp))
-                        .border(1.dp, BorderLight, RoundedCornerShape(11.dp))
-                        .clickable { onMatch(row) }
+                        .background(if (row.counted) Muted.copy(alpha = 0.08f) else CardWhite, RoundedCornerShape(11.dp))
+                        .border(1.dp, if (row.counted) Muted.copy(alpha = 0.15f) else BorderLight, RoundedCornerShape(11.dp))
+                        .clickable { onMatch(row, null) } // tap a counted row too — re-opens Input Stock in edit mode
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(text = row.supplier, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(text = row.supplier, color = if (row.counted) Muted else Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         Text(text = row.address, color = Muted, fontSize = 9.sp)
                     }
-                    Text(
-                        text = row.kbn,
-                        color = LemonBadgeText,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier
-                            .background(LemonSoft, RoundedCornerShape(7.dp))
-                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                    )
+                    if (row.counted) {
+                        Text(
+                            text = "✓ ${row.kbn}",
+                            color = Muted,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .background(Muted.copy(alpha = 0.12f), RoundedCornerShape(7.dp))
+                                .padding(horizontal = 9.dp, vertical = 3.dp)
+                        )
+                    } else {
+                        Text(
+                            text = row.kbn,
+                            color = LemonBadgeText,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .background(LemonSoft, RoundedCornerShape(7.dp))
+                                .padding(horizontal = 9.dp, vertical = 3.dp)
+                        )
+                    }
                 }
             }
         }
