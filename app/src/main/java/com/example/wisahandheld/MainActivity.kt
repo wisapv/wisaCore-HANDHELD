@@ -55,7 +55,9 @@ class MainActivity : ComponentActivity() {
                 // scan on Input Stock).
                 var selectedQtyPerBox by remember { mutableStateOf(0) }
                 var selectedInitialBox by remember { mutableStateOf(0) }
-                var currentBatchId by remember { mutableStateOf<String?>(null) }
+                var currentBatchId by remember { mutableStateOf(Prefs.loadWorkBatch(context)) }
+                var tbosBatchIdForPicker by remember { mutableStateOf<String?>(null) }
+                var getsudoBatchIdsForPicker by remember { mutableStateOf<List<String>>(emptyList()) }
 
                 val scope = rememberCoroutineScope()
 
@@ -69,7 +71,10 @@ class MainActivity : ComponentActivity() {
                 fun loadJobs() {
                     scope.launch {
                         jobsStatus = "loading"
-                        val batchId = Api.fetchCurrentBatchId()
+                        // Reuse the batchId already pinned by the work-mode
+                        // pick (or the single-mode skip) — only falls back to
+                        // the app-wide active batch if nothing was pinned yet.
+                        val batchId = currentBatchId ?: Api.fetchCurrentBatchId()
                         if (batchId == null) {
                             jobsStatus = "error"
                             return@launch
@@ -152,12 +157,61 @@ class MainActivity : ComponentActivity() {
                                 employeeName = id
                                 employeePhone = phone
                                 Prefs.saveEmployee(context, id, phone)
-                                currentScreen = "Home"
-                                loadJobs()
                                 Api.logCheckIn(currentBatchId, deviceCode, id, phone) // audit log — fire and forget
+
+                                // Which batch(es) actually apply to this device
+                                // decides whether the "which work?" picker is
+                                // needed at all — most devices only ever have
+                                // one, so this usually skips straight to Home.
+                                val modes = Api.fetchWorkModes(deviceCode)
+                                val hasTbos = modes?.tbosBatchId != null
+                                val hasGetsudo = modes?.getsudoBatchIds?.isNotEmpty() == true
+                                when {
+                                    hasTbos && hasGetsudo -> {
+                                        tbosBatchIdForPicker = modes?.tbosBatchId
+                                        getsudoBatchIdsForPicker = modes?.getsudoBatchIds ?: emptyList()
+                                        currentScreen = "WorkMode"
+                                    }
+                                    hasTbos -> {
+                                        currentBatchId = modes?.tbosBatchId
+                                        Prefs.saveWorkBatch(context, currentBatchId)
+                                        currentScreen = "Home"
+                                        loadJobs()
+                                    }
+                                    hasGetsudo -> {
+                                        currentBatchId = modes?.getsudoBatchIds?.firstOrNull()
+                                        Prefs.saveWorkBatch(context, currentBatchId)
+                                        currentScreen = "Home"
+                                        loadJobs()
+                                    }
+                                    else -> {
+                                        // No assignment found either way (or the
+                                        // work-modes check itself failed) — fall
+                                        // back to the old behavior so a device
+                                        // never gets stuck with nothing to do.
+                                        Prefs.saveWorkBatch(context, null)
+                                        currentScreen = "Home"
+                                        loadJobs()
+                                    }
+                                }
                             }
                         },
                         onBack = { scope.launch { delay(120); currentScreen = "Login" } }
+                    )
+
+                    "WorkMode" -> WorkModeScreen(
+                        onPickTbos = {
+                            currentBatchId = tbosBatchIdForPicker
+                            Prefs.saveWorkBatch(context, currentBatchId)
+                            scope.launch { delay(120); currentScreen = "Home"; loadJobs() }
+                        },
+                        onPickGetsudo = { batchId ->
+                            currentBatchId = batchId
+                            Prefs.saveWorkBatch(context, batchId)
+                            scope.launch { delay(120); currentScreen = "Home"; loadJobs() }
+                        },
+                        getsudoBatchIds = getsudoBatchIdsForPicker,
+                        onBack = { scope.launch { delay(120); currentScreen = "CheckIn" } }
                     )
 
                     "Home" -> {

@@ -15,6 +15,7 @@ object Prefs {
     private const val KEY_DEVICE_CODE = "device_code"
     private const val KEY_EMPLOYEE_NAME = "employee_name"
     private const val KEY_EMPLOYEE_PHONE = "employee_phone"
+    private const val KEY_WORK_BATCH_ID = "work_batch_id"
 
     fun saveDeviceCode(context: Context, code: String) {
         prefs(context).edit().putString(KEY_DEVICE_CODE, code).apply()
@@ -27,9 +28,15 @@ object Prefs {
             .apply()
     }
 
+    /** Which batch (Part Runout active batch, or a specific Getsudo batch) was picked on WorkModeScreen — survives closing the app, so it isn't asked again every cold start. Cleared when checking in again as a different person. */
+    fun saveWorkBatch(context: Context, batchId: String?) {
+        prefs(context).edit().putString(KEY_WORK_BATCH_ID, batchId).apply()
+    }
+
     fun loadDeviceCode(context: Context): String? = prefs(context).getString(KEY_DEVICE_CODE, null)
     fun loadEmployeeName(context: Context): String? = prefs(context).getString(KEY_EMPLOYEE_NAME, null)
     fun loadEmployeePhone(context: Context): String? = prefs(context).getString(KEY_EMPLOYEE_PHONE, null)
+    fun loadWorkBatch(context: Context): String? = prefs(context).getString(KEY_WORK_BATCH_ID, null)
 
     private fun prefs(context: Context) = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 }

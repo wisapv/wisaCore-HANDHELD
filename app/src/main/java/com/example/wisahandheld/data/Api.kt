@@ -90,6 +90,22 @@ object Api {
     }
 
     /** GET /api/part-list/current-batch — which batch is currently active on the web. */
+    /** Which batches this device actually has work in — Part Runout (the app-wide active batch) and/or one or more Getsudo batches, independently. */
+    data class WorkModes(val tbosBatchId: String?, val getsudoBatchIds: List<String>)
+
+    /** GET /api/handheld-assign/my-work-modes — used right after check-in to decide whether to show the "which work?" picker (only when both apply) or skip straight to Home. */
+    suspend fun fetchWorkModes(deviceId: String): WorkModes? = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = get("$BASE_URL/api/handheld-assign/my-work-modes?deviceId=${enc(deviceId)}")
+            val tbos = json.optJSONObject("tbos")
+            val getsudoArr = json.optJSONArray("getsudo") ?: JSONArray()
+            WorkModes(
+                tbosBatchId = tbos?.optString("batchId"),
+                getsudoBatchIds = (0 until getsudoArr.length()).map { getsudoArr.getJSONObject(it).optString("batchId") }
+            )
+        }.onFailure { Log.e(TAG, "fetchWorkModes failed", it) }.getOrNull()
+    }
+
     suspend fun fetchCurrentBatchId(): String? = withContext(Dispatchers.IO) {
         runCatching {
             val json = get("$BASE_URL/api/part-list/current-batch")
