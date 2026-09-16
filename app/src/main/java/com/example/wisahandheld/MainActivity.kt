@@ -65,6 +65,11 @@ class MainActivity : ComponentActivity() {
                 var jobsStatus by remember { mutableStateOf("idle") }
                 var jobs by remember { mutableStateOf<List<ZoneJob>>(emptyList()) }
 
+                // Free Zone assignments for THIS device — drives whether Home's
+                // Free zone entry point shows at all, and which zone(s) it
+                // shows once inside (see HomeScreen/FreeZoneScreen).
+                var freeZones by remember { mutableStateOf<List<Api.FreeZoneAssignment>>(emptyList()) }
+
                 var zonePartsStatus by remember { mutableStateOf("idle") }
                 var zoneParts by remember { mutableStateOf<List<KbnRow>>(emptyList()) }
 
@@ -87,6 +92,11 @@ class MainActivity : ComponentActivity() {
                         }
                         jobs = result.map { ZoneJob(code = it.code, pic = it.pic, itemCount = it.itemCount) }
                         jobsStatus = "ready"
+
+                        // Best-effort, alongside jobs — a failure here just
+                        // means Free zone won't show (same as having none),
+                        // it never blocks Part list from working.
+                        freeZones = Api.fetchMyFreeZones(batchId, deviceCode) ?: emptyList()
                     }
                 }
 
@@ -228,6 +238,9 @@ class MainActivity : ComponentActivity() {
                             phone = employeePhone,
                             zonesToday = jobs.size,
                             remainingCount = remainingCount,
+                            hasFixZone = jobs.isNotEmpty(),
+                            hasFreeZone = freeZones.isNotEmpty(),
+                            freeZoneCodes = freeZones.map { it.code },
                             onOpenPartList = { scope.launch { delay(150); currentScreen = "PartList" } },
                             onOpenFreeZone = { scope.launch { delay(150); currentScreen = "FreeZone" } },
                             onChangePerson = { scope.launch { delay(150); currentScreen = "CheckIn" } },
@@ -349,13 +362,14 @@ class MainActivity : ComponentActivity() {
                     )
 
                     "FreeZone" -> FreeZoneScreen(
-                        onSend = { items ->
+                        zoneCodes = freeZones.map { it.code },
+                        onSend = { qrCodes ->
                             scope.launch {
                                 val batchId = currentBatchId ?: Api.fetchCurrentBatchId()
                                 if (batchId != null) {
-                                    Api.submitFreeZone(
+                                    Api.submitFreeZoneQr(
                                         batchId = batchId, deviceId = deviceCode, employeeName = employeeName,
-                                        items = items.map { it.barcode to it.boxCount }
+                                        qrCodes = qrCodes
                                     )
                                 }
                                 delay(150)

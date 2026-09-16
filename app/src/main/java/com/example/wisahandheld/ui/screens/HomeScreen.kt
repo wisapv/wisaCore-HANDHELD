@@ -22,7 +22,9 @@ import com.example.wisahandheld.ui.theme.Ink
 import com.example.wisahandheld.ui.theme.Lemon
 import com.example.wisahandheld.ui.theme.Muted
 
-/** Screen 4 — landing page after check-in. Two entry points: Part list (assigned work) and Free zone (open scan). */
+/** Screen 4 — landing page after check-in. Two entry points: Part list (assigned work) and Free zone (open scan) —
+ *  each only shows if this device actually has that kind of assignment (see hasFixZone/hasFreeZone below); a
+ *  device with only a Free Zone assignment never sees Part list, and vice versa. */
 @Composable
 fun HomeScreen(
     deviceCode: String,
@@ -30,6 +32,9 @@ fun HomeScreen(
     phone: String,
     zonesToday: Int,
     remainingCount: Int,
+    hasFixZone: Boolean,
+    hasFreeZone: Boolean,
+    freeZoneCodes: List<String>,
     onOpenPartList: () -> Unit,
     onOpenFreeZone: () -> Unit,
     onChangePerson: () -> Unit,
@@ -97,48 +102,64 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Part list — the assigned work (from the web's AssignHandheld page).
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Lemon, RoundedCornerShape(18.dp))
-                .clickable(onClick = onOpenPartList)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier.size(42.dp).background(Ink.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) { ChecklistIcon(tint = Ink, sizeDp = 19.dp) }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Part list", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                Text(text = "$zonesToday zones assigned", color = Ink.copy(alpha = 0.6f), fontSize = 10.sp)
+        // Only shown when this device actually has a Fix Zone assignment.
+        if (hasFixZone) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Lemon, RoundedCornerShape(18.dp))
+                    .clickable(onClick = onOpenPartList)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(42.dp).background(Ink.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) { ChecklistIcon(tint = Ink, sizeDp = 19.dp) }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "Part list", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "$zonesToday zones assigned", color = Ink.copy(alpha = 0.6f), fontSize = 10.sp)
+                }
+                Text(text = "›", color = Ink, fontSize = 18.sp)
             }
-            Text(text = "›", color = Ink, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Free zone — open scan, not tied to any assignment.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CardWhite, RoundedCornerShape(18.dp))
-                .border(1.dp, BorderLight, RoundedCornerShape(18.dp))
-                .clickable(onClick = onOpenFreeZone)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier.size(42.dp).background(Lemon.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) { ScanFrameIcon(tint = Ink, sizeDp = 19.dp) }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Free zone", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                Text(text = "สแกนอิสระ ไม่มี list กำหนด", color = Muted, fontSize = 10.sp)
+        // Free zone — open scan, but still tied to an actual assignment now
+        // (see hasFreeZone/freeZoneCodes) — only shown when this device has
+        // one, and shows which zone(s) so the operator knows where they're
+        // counting, same as Part list shows its own zone count.
+        if (hasFreeZone) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CardWhite, RoundedCornerShape(18.dp))
+                    .border(1.dp, BorderLight, RoundedCornerShape(18.dp))
+                    .clickable(onClick = onOpenFreeZone)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(42.dp).background(Lemon.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) { ScanFrameIcon(tint = Ink, sizeDp = 19.dp) }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "Free zone", color = Ink, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "Zone: ${freeZoneCodes.joinToString(", ")}", color = Muted, fontSize = 10.sp)
+                }
+                Text(text = "›", color = Muted, fontSize = 18.sp)
             }
-            Text(text = "›", color = Muted, fontSize = 18.sp)
+        }
+
+        if (!hasFixZone && !hasFreeZone) {
+            Text(
+                text = "ยังไม่มีงานที่มอบหมายให้เครื่องนี้ในตอนนี้",
+                color = Muted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
         Spacer(modifier = Modifier.weight(1f))
         BackButton(onClick = onBack)

@@ -1,9 +1,14 @@
 package com.example.wisahandheld.data
 
 /**
- * Parses the fixed-width (80-char) QR string printed on a Kanban (KBN)
- * tag. Every field lives at a fixed character position — same layout for
- * every shop/dock (confirmed — not just Samrong/S1). Example:
+ * Parses the fixed-width QR string printed on a Kanban (KBN) tag. Every
+ * field up through Conveyance lives at a fixed character position (same
+ * layout for every shop/dock — confirmed, not just Samrong/S1); Full
+ * Address is everything left after that, NOT a fixed 8 characters — same
+ * as the backend's own decoder (decodeLocalFreeZoneQr), which this must
+ * match exactly since both are decoding the identical QR text. A stricter
+ * client-side rule than the backend's used to reject perfectly valid scans
+ * whose address happened to run longer than 8 characters. Example:
  *
  *   SS12026090301 335040K270C00001/00020000028DAIWGD3 03/09/202609:4011A610ASD - R03
  *
@@ -25,7 +30,7 @@ package com.example.wisahandheld.data
  *   65-66  MROS Lane No.    (2)   "11"
  *   67-70  KBN code         (4)   "A610"
  *   71     Conveyance       (1)   "A"
- *   72-79  Full Address     (8)   "SD - R03"
+ *   72-end Full Address  (rest)   "SD - R03" — whatever's left, length varies
  */
 data class ParsedKbn(
     val shop: String,
@@ -47,11 +52,15 @@ data class ParsedKbn(
 )
 
 object KbnQr {
-    private const val EXPECTED_LENGTH = 80
+    // Every fixed-width field up through Conveyance — Full Address is
+    // whatever's left, so this is a MINIMUM length, not an exact one.
+    private const val FIXED_PREFIX_LENGTH = 72
 
-    /** Returns null for anything that isn't a valid 80-char Kanban QR (wrong length, non-numeric qty/box fields, etc). */
+    /** Returns null for anything shorter than a valid Kanban QR can possibly be (too short to even hold every
+     *  fixed field), or with non-numeric qty/box fields. Does NOT require an exact length — Full Address can run
+     *  longer or shorter than any particular sample, same as the backend's own decoder. */
     fun parse(raw: String): ParsedKbn? {
-        if (raw.length != EXPECTED_LENGTH) return null
+        if (raw.length <= FIXED_PREFIX_LENGTH) return null // must have at least 1 char left over for the address
         return try {
             ParsedKbn(
                 shop = raw.substring(0, 1),
@@ -69,7 +78,7 @@ object KbnQr {
                 mrosLane = raw.substring(65, 67),
                 kbnCode = raw.substring(67, 71),
                 conveyance = raw.substring(71, 72),
-                fullAddress = raw.substring(72, 80)
+                fullAddress = raw.substring(72)
             )
         } catch (e: Exception) {
             null

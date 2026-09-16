@@ -7,22 +7,29 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wisahandheld.data.KbnQr
+import com.example.wisahandheld.data.ParsedKbn
 import com.example.wisahandheld.ui.components.BackButton
 import com.example.wisahandheld.ui.components.BoxPackageIcon
 import com.example.wisahandheld.ui.components.ScanFrameIcon
-import com.example.wisahandheld.ui.components.Sparkle
 import com.example.wisahandheld.ui.theme.BorderLight
 import com.example.wisahandheld.ui.theme.Canvas
 import com.example.wisahandheld.ui.theme.CardWhite
@@ -32,46 +39,70 @@ import com.example.wisahandheld.ui.theme.LemonBadgeText
 import com.example.wisahandheld.ui.theme.LemonSoft
 import com.example.wisahandheld.ui.theme.Muted
 
-/** One barcode's running box tally in Free Zone. Full boxes, so we count boxes, not pieces. */
-data class FreeZoneItem(val barcode: String, var boxCount: Int)
+/**
+ * One scanned box's Kanban QR — the raw text (sent to the backend, which
+ * re-decodes it as the authoritative source of truth) plus a best-effort
+ * client-side parse (KbnQr.parse) purely for on-screen feedback.
+ *
+ * `parsed` can be null even for a perfectly valid scan: KbnQr.parse expects
+ * an exact 80-char string with an 8-char address at a fixed position,
+ * while the backend's own decoder (decodeLocalFreeZoneQr) treats the
+ * address as "everything left" — a longer address is valid server-side but
+ * fails this client-side parse. A parse failure must never drop a real
+ * scan, so it's still queued and sent — just shown without the part-no/box
+ * breakdown, since that's all client-side preview can't be sure of here.
+ */
+data class FreeZoneScan(val raw: String, val parsed: ParsedKbn?)
 
 /**
- * Free Zone — open scan, not tied to any assignment or list. Every scan is
- * a full box; scanning the same barcode again just adds another box. Items
- * are grouped by barcode, newest on top, with a running total. The +/-
- * controls are there to fix an over- or mis-scan.
+ * Free Zone — open scan, not tied to any assignment or address list. Every
+ * physical box has its own Kanban tag with a QR code; scanning it is the
+ * count (see the Zone Assignment Rules discussion — Free Zone has no part
+ * list to match against, unlike Fix Zone). Summing multiple boxes for the
+ * same order+part already happens server-side (Process Stock's addQty is a
+ * true accumulator over every handheld_free_zone_scans row) — this screen
+ * only needs to get each box's raw QR text there once.
  *
- * State here is in-memory only (a demo). In a real build, drive `items`
- * from a ViewModel and feed real scans in via DataWedge instead of the
- * simulateScan() helper.
+ * A real Zebra scanner in keyboard-wedge (DataWedge) mode types straight
+ * into whatever text field has focus and sends Enter — same pattern as
+ * AddressDetailScreen's own scan field, built to work with that as-is.
  */
 @Composable
-fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
-    val items = remember { mutableStateListOf<FreeZoneItem>() }
+fun FreeZoneScreen(zoneCodes: List<String>, onSend: (List<String>) -> Unit, onBack: () -> Unit) {
+    val scans = remember { mutableStateListOf<FreeZoneScan>() }
+    var scanInput by remember { mutableStateOf("") }
 
-    // Demo-only: cycles through a few fake barcodes so the button does
-    // something without a real scanner. Delete once DataWedge is wired in.
-    var demoIndex by remember { mutableStateOf(0) }
-    val demoBarcodes = listOf("A001-4402", "B233-0091", "A118-7723")
+    fun addScan(raw: String) {
+        val code = raw.trim()
+        if (code.isEmpty()) return
+        scanInput = ""
 
-    fun addScan(barcode: String) {
-        val existing = items.indexOfFirst { it.barcode == barcode }
-        if (existing >= 0) {
-            val current = items.removeAt(existing)
-            items.add(0, current.copy(boxCount = current.boxCount + 1))
-        } else {
-            items.add(0, FreeZoneItem(barcode, 1))
+        val parsed = KbnQr.parse(code)
+        if (parsed != null) {
+            // Re-scanning the same box (same order + Part No + box sequence)
+            // corrects/replaces its entry rather than adding a duplicate —
+            // matches the backend's own ON CONFLICT (batch_id, order_number,
+            // part_no, box_seq) DO UPDATE semantics. Only possible to detect
+            // here when the parse succeeded; an unparsed re-scan just adds
+            // another entry, which is still fine — the backend's own upsert
+            // key handles the real dedup regardless.
+            val existing = scans.indexOfFirst {
+                it.parsed?.orderNumber == parsed.orderNumber &&
+                        it.parsed?.partNumber == parsed.partNumber &&
+                        it.parsed?.boxSeq == parsed.boxSeq
+            }
+            if (existing >= 0) scans.removeAt(existing)
         }
+        scans.add(0, FreeZoneScan(code, parsed))
     }
 
-    fun changeBox(index: Int, delta: Int) {
-        val item = items[index]
-        val next = item.boxCount + delta
-        if (next <= 0) items.removeAt(index)
-        else items[index] = item.copy(boxCount = next)
+    fun removeScan(index: Int) {
+        scans.removeAt(index)
     }
 
-    val totalBoxes = items.sumOf { it.boxCount }
+    val distinctParts = remember(scans.size) { scans.mapNotNull { it.parsed?.partNumber }.distinct().size }
+    val totalQty = remember(scans.size) { scans.sumOf { it.parsed?.qtyPerBox ?: 0 } }
+    val unpreviewedCount = remember(scans.size) { scans.count { it.parsed == null } }
 
     Column(
         modifier = Modifier
@@ -95,41 +126,47 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
-        Text(text = "สแกนกล่องเต็ม · ระบบรวมยอดตามบาร์โค้ด", color = Muted, fontSize = 9.sp)
+        Text(text = "สแกน QR บนป้าย Kanban ของทุกกล่อง · ระบบรวมยอดให้อัตโนมัติ", color = Muted, fontSize = 9.sp)
+        Text(text = "Zone: ${zoneCodes.joinToString(", ")}", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Scan trigger.
-        Box(
+        // Scan / type the Kanban QR text — Enter (or a scanner's injected
+        // Enter) submits, same pattern as AddressDetailScreen's own field.
+        // No red-border/blocking state here on purpose — see FreeZoneScan's
+        // own doc comment on why a client-side parse failure must still be
+        // accepted, not rejected.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Ink, RoundedCornerShape(14.dp))
-                .clickable {
-                    addScan(demoBarcodes[demoIndex % demoBarcodes.size])
-                    demoIndex++
-                }
-                .padding(14.dp)
+                .background(CardWhite, RoundedCornerShape(12.dp))
+                .border(1.dp, BorderLight, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Sparkle(modifier = Modifier.align(Alignment.TopEnd), sizeDp = 8.dp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(34.dp).background(CardWhite.copy(alpha = 0.12f), RoundedCornerShape(9.dp)),
-                    contentAlignment = Alignment.Center
-                ) { ScanFrameIcon(tint = Lemon, sizeDp = 18.dp) }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = if (items.isEmpty()) "พร้อมสแกนกล่องแรก" else "พร้อมสแกนกล่องถัดไป",
-                        color = CardWhite,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(text = "กดปุ่มยิงบนเครื่อง Zebra", color = CardWhite.copy(alpha = 0.5f), fontSize = 8.5.sp)
+            ScanFrameIcon(tint = Muted, sizeDp = 16.dp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                if (scanInput.isEmpty()) {
+                    Text(text = "สแกน QR บนป้าย Kanban", color = Muted, fontSize = 12.sp)
                 }
+                BasicTextField(
+                    value = scanInput,
+                    onValueChange = { scanInput = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    cursorBrush = SolidColor(Ink),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { addScan(scanInput) }),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Running totals.
+        // Running totals. distinctParts/totalQty only count scans that
+        // parsed client-side — an unparsed scan is still queued and will
+        // still be sent and counted for real once the backend decodes it,
+        // it just can't contribute to a preview number here.
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Column(
                 modifier = Modifier
@@ -138,8 +175,18 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                     .border(1.dp, BorderLight, RoundedCornerShape(11.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp)
             ) {
-                Text(text = "${items.size}", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(text = "บาร์โค้ด", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
+                Text(text = "$distinctParts", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "Part No.", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(CardWhite, RoundedCornerShape(11.dp))
+                    .border(1.dp, BorderLight, RoundedCornerShape(11.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Text(text = "${scans.size}", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "กล่อง", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
             }
             Column(
                 modifier = Modifier
@@ -147,13 +194,21 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                     .background(Lemon, RoundedCornerShape(11.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp)
             ) {
-                Text(text = "$totalBoxes", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(text = "กล่องรวม", color = Ink.copy(alpha = 0.6f), fontSize = 8.sp, fontWeight = FontWeight.Medium)
+                Text(text = "$totalQty", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "Qty รวม", color = Ink.copy(alpha = 0.6f), fontSize = 8.sp, fontWeight = FontWeight.Medium)
             }
+        }
+        if (unpreviewedCount > 0) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "$unpreviewedCount กล่องดูตัวอย่างไม่ได้ แต่จะยังถูกส่งไปตรวจสอบที่ระบบตามปกติ",
+                color = Muted,
+                fontSize = 8.5.sp
+            )
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (items.isEmpty()) {
+        if (scans.isEmpty()) {
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -166,15 +221,16 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(text = "ยังไม่มีกล่องที่สแกน", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "ยิงบาร์โค้ดกล่องแรกเพื่อเริ่ม", color = Muted, fontSize = 9.5.sp)
+                Text(text = "สแกน QR กล่องแรกเพื่อเริ่ม", color = Muted, fontSize = 9.5.sp)
             }
         } else {
             Text(text = "สแกนล่าสุดอยู่บนสุด", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(6.dp))
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(items) { item ->
-                    val index = items.indexOf(item)
+                items(scans) { scan ->
+                    val index = scans.indexOf(scan)
                     val isNewest = index == 0
+                    val p = scan.parsed
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -188,29 +244,37 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = item.barcode, color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                            if (isNewest) {
-                                Text(text = "เพิ่งสแกน · +1 กล่อง", color = Muted, fontSize = 8.5.sp)
+                            if (p != null) {
+                                Text(text = p.partNumber, color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = "Box ${p.boxSeq}/${p.totalBoxes} · Order ${p.orderNumber}",
+                                    color = Muted,
+                                    fontSize = 8.5.sp
+                                )
+                            } else {
+                                Text(text = "สแกนแล้ว (ดูตัวอย่างไม่ได้)", color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                Text(text = "จะให้ระบบตรวจสอบตอนกด Send", color = Muted, fontSize = 8.5.sp)
                             }
                         }
-                        Text(text = "${item.boxCount}", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Box(
+                        if (p != null) {
+                            Text(
+                                text = "×${p.qtyPerBox}",
+                                color = Ink,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
                                 modifier = Modifier
-                                    .size(width = 18.dp, height = 15.dp)
-                                    .background(Ink, RoundedCornerShape(5.dp))
-                                    .clickable { changeBox(index, +1) },
-                                contentAlignment = Alignment.Center
-                            ) { Text(text = "+", color = Lemon, fontSize = 11.sp) }
-                            Box(
-                                modifier = Modifier
-                                    .size(width = 18.dp, height = 15.dp)
-                                    .background(Color_EDEFE8, RoundedCornerShape(5.dp))
-                                    .clickable { changeBox(index, -1) },
-                                contentAlignment = Alignment.Center
-                            ) { Text(text = "−", color = Muted, fontSize = 11.sp) }
+                                    .background(LemonSoft, RoundedCornerShape(7.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(width = 22.dp, height = 20.dp)
+                                .background(Color_EDEFE8, RoundedCornerShape(6.dp))
+                                .clickable { removeScan(index) },
+                            contentAlignment = Alignment.Center
+                        ) { Text(text = "×", color = Muted, fontSize = 12.sp) }
                     }
                 }
             }
@@ -220,13 +284,13 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(if (items.isEmpty()) Ink.copy(alpha = 0.4f) else Ink, RoundedCornerShape(12.dp))
-                .clickable(enabled = items.isNotEmpty()) { onSend(items.toList()) }
+                .background(if (scans.isEmpty()) Ink.copy(alpha = 0.4f) else Ink, RoundedCornerShape(12.dp))
+                .clickable(enabled = scans.isNotEmpty()) { onSend(scans.map { it.raw }) }
                 .padding(vertical = 13.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (items.isEmpty()) "Send" else "Send ทั้งหมด ($totalBoxes กล่อง)",
+                text = if (scans.isEmpty()) "Send" else "Send ทั้งหมด (${scans.size} กล่อง)",
                 color = Lemon,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -237,5 +301,5 @@ fun FreeZoneScreen(onSend: (List<FreeZoneItem>) -> Unit, onBack: () -> Unit) {
     }
 }
 
-// Light gray-green used for the "−" button background (matches Box/Pcs/Seq fields).
+// Light gray-green used for the remove-scan button background (matches Box/Pcs/Seq fields).
 private val Color_EDEFE8 = androidx.compose.ui.graphics.Color(0xFFEDEFE8)

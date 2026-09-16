@@ -26,14 +26,14 @@ import java.net.URLEncoder
 object Api {
     // Emulator talking to a server on the SAME computer → use 10.0.2.2
     // (the emulator's special alias for the host machine's localhost).
-    var BASE_URL = "http://10.0.2.2:3000"
+    // var BASE_URL = "http://10.0.2.2:3000"
 
     // Real Zebra device on WiFi → comment the line above and uncomment
     // this one instead. 172.20.10.3 was your PC's IP when this was set —
     // re-check with ipconfig if it changes (e.g. reconnecting to a
     // different WiFi/hotspot), and make sure the Zebra device joins the
     // SAME WiFi/hotspot as this PC.
-    // var BASE_URL = "http://172.20.10.3:3000"
+    var BASE_URL = "http://172.20.10.3:3000"
 
     data class Job(val code: String, val pic: String, val itemCount: Int)
     data class JobAddress(val addr: String, val remain: Int, val done: Boolean)
@@ -126,6 +126,23 @@ object Api {
         }.onFailure { Log.e(TAG, "fetchMyJobs failed", it) }.getOrNull()
     }
 
+    /** One Free Zone this device is assigned to — see FreeZoneAssignment. */
+    data class FreeZoneAssignment(val code: String, val dock: String)
+
+    /** GET /api/handheld-assign/my-free-zones — "does this device have a Free Zone assignment, and if so which
+     *  zone(s)?" Home uses this (alongside fetchMyJobs) to decide whether the Free zone entry point should even
+     *  show — previously it always showed regardless of what this device was actually assigned to. */
+    suspend fun fetchMyFreeZones(batchId: String, deviceId: String): List<FreeZoneAssignment>? = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = get("$BASE_URL/api/handheld-assign/my-free-zones?batchId=${enc(batchId)}&deviceId=${enc(deviceId)}")
+            val arr: JSONArray = json.optJSONArray("data") ?: JSONArray()
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                FreeZoneAssignment(code = o.optString("code"), dock = o.optString("dock"))
+            }
+        }.onFailure { Log.e(TAG, "fetchMyFreeZones failed", it) }.getOrNull()
+    }
+
     /** GET /api/handheld-assign/job-addresses — physical addresses inside one assigned zone (Select Address). */
     suspend fun fetchJobAddresses(batchId: String, deviceId: String, pic: String, shortAddr: String): List<JobAddress>? =
         withContext(Dispatchers.IO) {
@@ -188,7 +205,10 @@ object Api {
         }.onFailure { Log.e(TAG, "submitCount failed", it) }.getOrDefault(false)
     }
 
-    /** POST /api/handheld-assign/submit-free-zone — Free Zone "Send". Box counts here ADD to any existing total for that barcode. */
+    /** POST /api/handheld-assign/submit-free-zone — Free Zone "Send". Box counts here ADD to any existing total for that barcode.
+     *  @deprecated superseded by submitFreeZoneQr, which sends the real Kanban QR text and lets the backend decode it
+     *  (part no/qty/order/box seq all come from the QR itself instead of a manual tap-count) — kept only in case
+     *  anything still calls it during the transition. */
     suspend fun submitFreeZone(batchId: String, deviceId: String, employeeName: String, items: List<Pair<String, Int>>): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -203,6 +223,32 @@ object Api {
                 val json = post("$BASE_URL/api/handheld-assign/submit-free-zone", body)
                 json.optBoolean("success")
             }.onFailure { Log.e(TAG, "submitFreeZone failed", it) }.getOrDefault(false)
+        }
+
+    /** Result of submitFreeZoneQr — savedCount/failedCount so the screen can tell the operator "5 sent, 1 failed"
+     *  instead of a flat pass/fail for what might be a mixed batch of boxes. */
+    data class FreeZoneQrResult(val success: Boolean, val savedCount: Int, val failedCount: Int)
+
+    /** POST /api/handheld-assign/submit-free-zone-qr — Free Zone "Send", QR-based. Sends the untouched raw text of
+     *  every scanned Kanban QR; the backend decodes each one itself (decodeLocalFreeZoneQr) and upserts into
+     *  handheld_free_zone_scans keyed by (order_number, part_no, box_seq) — re-sending the same box corrects it,
+     *  it does not double-count. Process Stock sums qty across every scan for the same part on its own, so this
+     *  call never needs to pre-aggregate anything — one raw string per physical box scanned is enough. */
+    suspend fun submitFreeZoneQr(batchId: String, deviceId: String, employeeName: String, qrCodes: List<String>): FreeZoneQrResult =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val codesArr = JSONArray()
+                qrCodes.forEach { codesArr.put(it) }
+                val body = JSONObject().apply {
+                    put("batchId", batchId); put("deviceId", deviceId); put("employeeName", employeeName)
+                    put("qrCodes", codesArr)
+                }
+                val json = post("$BASE_URL/api/handheld-assign/submit-free-zone-qr", body)
+                val savedCount = json.optInt("savedCount", 0)
+                val failedCount = json.optJSONArray("failures")?.length() ?: 0
+                FreeZoneQrResult(success = json.optBoolean("success"), savedCount = savedCount, failedCount = failedCount)
+            }.onFailure { Log.e(TAG, "submitFreeZoneQr failed", it) }
+                .getOrDefault(FreeZoneQrResult(success = false, savedCount = 0, failedCount = qrCodes.size))
         }
 
     private const val TAG = "WisaApi"
