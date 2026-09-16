@@ -226,8 +226,15 @@ object Api {
         }
 
     /** Result of submitFreeZoneQr — savedCount/failedCount so the screen can tell the operator "5 sent, 1 failed"
-     *  instead of a flat pass/fail for what might be a mixed batch of boxes. */
-    data class FreeZoneQrResult(val success: Boolean, val savedCount: Int, val failedCount: Int)
+     *  instead of a flat pass/fail for what might be a mixed batch of boxes. `failedRaws` carries the actual raw
+     *  QR text of every box that failed (not just how many) — FreeZoneQueue needs this to know exactly which
+     *  entries to keep queued for retry and which to clear as confirmed. */
+    data class FreeZoneQrResult(
+        val success: Boolean,
+        val savedCount: Int,
+        val failedCount: Int,
+        val failedRaws: List<String> = emptyList()
+    )
 
     /** POST /api/handheld-assign/submit-free-zone-qr — Free Zone "Send", QR-based. Sends the untouched raw text of
      *  every scanned Kanban QR; the backend decodes each one itself (decodeLocalFreeZoneQr) and upserts into
@@ -245,11 +252,68 @@ object Api {
                 }
                 val json = post("$BASE_URL/api/handheld-assign/submit-free-zone-qr", body)
                 val savedCount = json.optInt("savedCount", 0)
-                val failedCount = json.optJSONArray("failures")?.length() ?: 0
-                FreeZoneQrResult(success = json.optBoolean("success"), savedCount = savedCount, failedCount = failedCount)
+                val failuresArr = json.optJSONArray("failures") ?: JSONArray()
+                val failedRaws = (0 until failuresArr.length()).map { failuresArr.getJSONObject(it).optString("raw") }
+                FreeZoneQrResult(
+                    success = json.optBoolean("success"), savedCount = savedCount,
+                    failedCount = failedRaws.size, failedRaws = failedRaws
+                )
             }.onFailure { Log.e(TAG, "submitFreeZoneQr failed", it) }
-                .getOrDefault(FreeZoneQrResult(success = false, savedCount = 0, failedCount = qrCodes.size))
+                // Couldn't even reach the server — treat every code sent as failed/unsent rather than as an
+                // unknown, so FreeZoneQueue.sendAll's "keep only what's in failedRaws" logic leaves everything
+                // queued for retry instead of accidentally clearing boxes that were never actually confirmed.
+                .getOrDefault(FreeZoneQrResult(success = false, savedCount = 0, failedCount = qrCodes.size, failedRaws = qrCodes))
         }
+
+    /** One item's outcome from submitCountsBulk — index-aligned with the request's `counts` list, same order in and out. */
+    data class BulkSubmitItemResult(val success: Boolean, val error: String? = null)
+
+    /** POST /api/handheld-assign/submit-counts-bulk — bulk variant of submitCount, built for SyncManager's
+     *  local-first queue: one request replays every not-yet-confirmed count instead of one request per item,
+     *  so a spotty connection costs one retry of the whole batch, not N separate timeouts.
+     *  Returns null on a total failure (couldn't even reach the server) — SyncManager treats that as
+     *  "leave everything queued", as opposed to a real response where each item has its own success/failure. */
+    suspend fun submitCountsBulk(batchId: String, deviceId: String, items: List<PendingCount>): List<BulkSubmitItemResult>? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val countsArr = JSONArray()
+                items.forEach { c ->
+                    countsArr.put(JSONObject().apply {
+                        put("pic", c.pic); put("shortAddr", c.shortAddr); put("addr", c.addr); put("kbn", c.kbn)
+                        put("partNo", c.partNo); put("partName", c.partName); put("supplier", c.supplier)
+                        put("shop", c.shop); put("dock", c.dock); put("sPlant", c.sPlant); put("sDock", c.sDock)
+                        put("qty", c.qty); put("box", c.box); put("pcs", c.pcs); put("seq", c.seq)
+                        put("notFound", c.notFound); put("employeeName", c.employeeName); put("employeePhone", c.employeePhone)
+                    })
+                }
+                val body = JSONObject().apply {
+                    put("batchId", batchId); put("deviceId", deviceId); put("counts", countsArr)
+                }
+                val json = post("$BASE_URL/api/handheld-assign/submit-counts-bulk", body)
+                val resultsArr = json.optJSONArray("results") ?: JSONArray()
+                (0 until resultsArr.length()).map { i ->
+                    val o = resultsArr.getJSONObject(i)
+                    BulkSubmitItemResult(
+                        success = o.optBoolean("success"),
+                        error = o.optString("error").takeIf { it.isNotBlank() }
+                    )
+                }
+            }.onFailure { Log.e(TAG, "submitCountsBulk failed", it) }.getOrNull()
+        }
+
+    /** POST /api/handheld-assign/heartbeat — fire-and-forget "I'm alive" ping (see SyncManager and the
+     *  real-time/offline-badge design discussion). A failure here is EXPECTED whenever offline — it must
+     *  never be surfaced to the operator, it's just best-effort dashboard liveness, nothing else depends on it. */
+    suspend fun sendHeartbeat(deviceId: String, batchId: String?) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject().apply {
+                    put("deviceId", deviceId); put("batchId", batchId)
+                }
+                post("$BASE_URL/api/handheld-assign/heartbeat", body)
+            }
+        }
+    }
 
     private const val TAG = "WisaApi"
 

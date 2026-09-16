@@ -17,6 +17,17 @@ object Prefs {
     private const val KEY_EMPLOYEE_PHONE = "employee_phone"
     private const val KEY_WORK_BATCH_ID = "work_batch_id"
 
+    // Fix Zone's local-first pending queue (see PendingCount/SyncManager) —
+    // one JSON array string holding every count not yet confirmed by the
+    // server. Deliberately app-wide, not scoped to the current batch: each
+    // item already carries its own batchId, so nothing is lost if the
+    // operator switches work batch while something is still queued.
+    private const val KEY_PENDING_COUNTS = "pending_counts_json"
+
+    // Free Zone's local-first queue (see FreeZoneQueue) — one JSON array of
+    // raw Kanban QR strings not yet confirmed saved by the server.
+    private const val KEY_FREE_ZONE_SCANS = "free_zone_scans_json"
+
     fun saveDeviceCode(context: Context, code: String) {
         prefs(context).edit().putString(KEY_DEVICE_CODE, code).apply()
     }
@@ -37,6 +48,20 @@ object Prefs {
     fun loadEmployeeName(context: Context): String? = prefs(context).getString(KEY_EMPLOYEE_NAME, null)
     fun loadEmployeePhone(context: Context): String? = prefs(context).getString(KEY_EMPLOYEE_PHONE, null)
     fun loadWorkBatch(context: Context): String? = prefs(context).getString(KEY_WORK_BATCH_ID, null)
+
+    /** Raw JSON array string of every pending count — see PendingCount.saveAll/loadAll, which own the actual (de)serialization. Written on every queue change, not just on app close, since the whole point is surviving a kill/crash mid-count. */
+    fun savePendingCountsJson(context: Context, json: String) {
+        prefs(context).edit().putString(KEY_PENDING_COUNTS, json).apply()
+    }
+
+    fun loadPendingCountsJson(context: Context): String? = prefs(context).getString(KEY_PENDING_COUNTS, null)
+
+    /** Raw JSON array string of every not-yet-sent Free Zone scan — see FreeZoneQueue.saveAll/loadAll. */
+    fun saveFreeZoneScansJson(context: Context, json: String) {
+        prefs(context).edit().putString(KEY_FREE_ZONE_SCANS, json).apply()
+    }
+
+    fun loadFreeZoneScansJson(context: Context): String? = prefs(context).getString(KEY_FREE_ZONE_SCANS, null)
 
     private fun prefs(context: Context) = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 }

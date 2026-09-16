@@ -1,36 +1,32 @@
 package com.example.wisahandheld.data
 
 /**
- * Parses the fixed-width QR string printed on a Kanban (KBN) tag. Every
- * field up through Conveyance lives at a fixed character position (same
- * layout for every shop/dock — confirmed, not just Samrong/S1); Full
- * Address is everything left after that, NOT a fixed 8 characters — same
- * as the backend's own decoder (decodeLocalFreeZoneQr), which this must
- * match exactly since both are decoding the identical QR text. A stricter
- * client-side rule than the backend's used to reject perfectly valid scans
- * whose address happened to run longer than 8 characters. Example:
+ * Parses the fixed-width QR string printed on a Kanban (KBN) tag — mirrors
+ * the backend's own decoder (decodeLocalFreeZoneQr in freeZoneQr.js)
+ * field-for-field, since both decode the identical QR text and must never
+ * disagree about what a given scan means.
  *
- *   SS12026090301 335040K270C00001/00020000028DAIWGD3 03/09/202609:4011A610ASD - R03
+ * Every field is genuinely fixed-width EXCEPT Part No.: real scans showed
+ * the gap between Order Number and Part No. can be 1 OR 2 blank characters
+ * (confirmed against a real printed Kanban label — some orders reserve a
+ * short suffix there, blank-padded when unused), which a strict fixed-
+ * offset read misreads entirely, shifting every field after it by one
+ * character and rejecting an otherwise perfectly valid scan.
  *
- *   0      Shop            (1)   "S"
- *   1-2    Dock             (2)   "S1"
- *   3-12   Order number    (10)   "2026090301"
- *   13     (space)
- *   14-25  Part number     (12)   "335040K270C0"
- *   26-29  Box Seq          (4)   "0001"  — which box this tag is (1st, 2nd...)
- *   30     "/"
- *   31-34  Total Boxes      (4)   "0002"  — how many boxes this order/part has in total
- *   35-41  Qty per Box      (7)   "0000028" — standard quantity in one full box
- *   42-45  Supplier code    (4)   "DAIW"
- *   46     S.plant          (1)   "G"
- *   47-48  S.dock           (2)   "D3"
- *   49     (space)
- *   50-59  Arrival date    (10)   "03/09/2026"
- *   60-64  Arrival time     (5)   "09:40"
- *   65-66  MROS Lane No.    (2)   "11"
- *   67-70  KBN code         (4)   "A610"
- *   71     Conveyance       (1)   "A"
- *   72-end Full Address  (rest)   "SD - R03" — whatever's left, length varies
+ * Fix: don't assume Part No.'s width at all. Anchor on the first "/" in
+ * the string instead — Box Seq is always exactly 4 digits immediately
+ * before it, so Part No. is simply everything between the order number
+ * and those 4 digits, trimmed of any leading/trailing padding, however
+ * long it actually is. This assumes Part No. itself never contains a "/"
+ * (true of every real sample seen so far) and that the first "/" in the
+ * string is the Box Seq separator (always true — Arrival Date's own "/"
+ * characters come much later positionally).
+ *
+ * Example (verified against a real printed label):
+ *   SS12026013006  126010E010000001/000500000061PITAI1 30/01/202607:3011A001IFN4  - R00
+ *   → Plant=S Dock=S1 Order=2026013006 PartNo=126010E01000 BoxSeq/Total=0001/0005
+ *     Qty=6 Supplier=1PIT S.plant=A S.dock=I1 Date=30/01/2026 Time=07:30
+ *     Lane=11 Kbn=A001 Conveyance=I Address="FN4  - R00"
  */
 data class ParsedKbn(
     val shop: String,
@@ -52,33 +48,79 @@ data class ParsedKbn(
 )
 
 object KbnQr {
-    // Every fixed-width field up through Conveyance — Full Address is
-    // whatever's left, so this is a MINIMUM length, not an exact one.
-    private const val FIXED_PREFIX_LENGTH = 72
+    private const val BOX_SEQ_WIDTH = 4
 
-    /** Returns null for anything shorter than a valid Kanban QR can possibly be (too short to even hold every
-     *  fixed field), or with non-numeric qty/box fields. Does NOT require an exact length — Full Address can run
-     *  longer or shorter than any particular sample, same as the backend's own decoder. */
+    // Sanity bound on Part No.'s length — not meant to catch a subtle one-
+    // character-off scan (genuinely indistinguishable from a real Part No.
+    // one character longer/shorter now that width varies), only to reject
+    // obviously-wrong input where the "/" search latched onto something
+    // that isn't really this field at all.
+    private const val MIN_PART_NO_LENGTH = 4
+    private const val MAX_PART_NO_LENGTH = 20
+
+    /** Returns null for anything that doesn't decode cleanly — see the file doc comment for the algorithm, which must stay in lockstep with the backend's decodeLocalFreeZoneQr. */
     fun parse(raw: String): ParsedKbn? {
-        if (raw.length <= FIXED_PREFIX_LENGTH) return null // must have at least 1 char left over for the address
         return try {
+            var pos = 0
+            fun take(n: Int): String {
+                val v = raw.substring(pos, pos + n)
+                pos += n
+                return v
+            }
+            fun expect(ch: Char) {
+                if (pos >= raw.length || raw[pos] != ch) throw IllegalArgumentException("expected '$ch' at $pos")
+                pos += 1
+            }
+
+            val shop = take(1)
+            val dock = take(2)
+            val orderNumber = take(10)
+            expect(' ')
+
+            // Anchor on the first "/" — Box Seq is always the 4 digits right
+            // before it, Part No. is everything before THAT (variable length,
+            // trimmed of any leftover padding — see the file doc comment).
+            val partNoStart = pos
+            val slashIndex = raw.indexOf('/', pos)
+            if (slashIndex == -1) return null
+            if (slashIndex - partNoStart < BOX_SEQ_WIDTH) return null
+            val partNumber = raw.substring(partNoStart, slashIndex - BOX_SEQ_WIDTH).trim()
+            if (partNumber.length < MIN_PART_NO_LENGTH || partNumber.length > MAX_PART_NO_LENGTH) return null
+            val boxSeq = raw.substring(slashIndex - BOX_SEQ_WIDTH, slashIndex).trim().toInt()
+            pos = slashIndex
+            expect('/')
+
+            val totalBoxes = take(4).trim().toInt()
+            val qtyPerBox = take(7).trim().toInt()
+            val supplierCode = take(4)
+            val sPlant = take(1)
+            val sDock = take(2)
+            expect(' ')
+            val arrivalDate = take(10)
+            val arrivalTime = take(5)
+            val mrosLane = take(2)
+            val kbnCode = take(4)
+            val conveyance = take(1)
+            val fullAddress = raw.substring(pos)
+            if (fullAddress.isEmpty()) return null
+
             ParsedKbn(
-                shop = raw.substring(0, 1),
-                dock = raw.substring(1, 3),
-                orderNumber = raw.substring(3, 13),
-                partNumber = raw.substring(14, 26),
-                boxSeq = raw.substring(26, 30).trim().toInt(),
-                totalBoxes = raw.substring(31, 35).trim().toInt(),
-                qtyPerBox = raw.substring(35, 42).trim().toInt(),
-                supplierCode = raw.substring(42, 46),
-                sPlant = raw.substring(46, 47),
-                sDock = raw.substring(47, 49),
-                arrivalDate = raw.substring(50, 60),
-                arrivalTime = raw.substring(60, 65),
-                mrosLane = raw.substring(65, 67),
-                kbnCode = raw.substring(67, 71),
-                conveyance = raw.substring(71, 72),
-                fullAddress = raw.substring(72)
+                shop = shop,
+                dock = dock,
+                orderNumber = orderNumber,
+                partNumber = partNumber,
+                boxSeq = boxSeq,
+                totalBoxes = totalBoxes,
+                qtyPerBox = qtyPerBox,
+                supplierCode = supplierCode,
+                sPlant = sPlant,
+                sDock = sDock,
+                arrivalDate = arrivalDate,
+                arrivalTime = arrivalTime,
+                mrosLane = mrosLane,
+                kbnCode = kbnCode,
+                conveyance = conveyance,
+                fullAddress = fullAddress
             )
         } catch (e: Exception) {
             null

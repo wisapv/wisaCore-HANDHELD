@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.example.wisahandheld.data.Api
+import com.example.wisahandheld.data.FreeZoneQueue
 import com.example.wisahandheld.data.Prefs
 import com.example.wisahandheld.ui.screens.*
 import com.example.wisahandheld.ui.theme.Canvas
@@ -27,6 +28,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             WISAHANDHELDTheme {
                 val context = LocalContext.current
+
+                // Restores any Free Zone scans still queued from before the
+                // app was last closed/killed — idempotent, safe to call on
+                // every recomposition (see FreeZoneQueue.init's own guard).
+                FreeZoneQueue.init(context)
 
                 // Restore saved login/check-in so closing and reopening the
                 // app doesn't force re-entering everything (see Prefs.kt).
@@ -363,19 +369,9 @@ class MainActivity : ComponentActivity() {
 
                     "FreeZone" -> FreeZoneScreen(
                         zoneCodes = freeZones.map { it.code },
-                        onSend = { qrCodes ->
-                            scope.launch {
-                                val batchId = currentBatchId ?: Api.fetchCurrentBatchId()
-                                if (batchId != null) {
-                                    Api.submitFreeZoneQr(
-                                        batchId = batchId, deviceId = deviceCode, employeeName = employeeName,
-                                        qrCodes = qrCodes
-                                    )
-                                }
-                                delay(150)
-                                currentScreen = "Home"
-                            }
-                        },
+                        deviceId = deviceCode,
+                        batchId = currentBatchId,
+                        employeeName = employeeName,
                         onBack = { scope.launch { delay(120); currentScreen = "Home" } }
                     )
                 }
