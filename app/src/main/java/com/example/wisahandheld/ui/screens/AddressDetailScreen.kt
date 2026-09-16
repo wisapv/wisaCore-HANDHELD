@@ -107,7 +107,11 @@ fun AddressDetailScreen(
             scanInput = ""
             onMatch(match, parsed)
         } else {
+            // Not in this zone's part list — clear the stray scan instead of
+            // leaving it stuck in the field (it can never match anything,
+            // and the next real scan would otherwise get appended to it).
             noMatch = true
+            scanInput = ""
         }
     }
 
@@ -164,12 +168,12 @@ fun AddressDetailScreen(
         }
         if (noMatch) {
             Spacer(modifier = Modifier.height(6.dp))
-            Text(text = "ไม่พบ part นี้ใน zone นี้ — ลองสแกนใหม่ หรือแตะเลือกจากลิสต์ด้านล่าง", color = ErrorText, fontSize = 10.sp)
+            Text(text = "ไม่พบใน zone นี้", color = ErrorText, fontSize = 10.sp)
         }
         Spacer(modifier = Modifier.height(12.dp))
 
         if (remaining.isEmpty()) {
-            Text(text = "นับครบทุกรายการในโซนนี้แล้ว", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
+            Text(text = "ครบทุกรายการแล้ว", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
         }
 
         val allSorted = remember(parts) { parts.sortedBy { it.counted } } // not-yet-counted first, counted ones after
