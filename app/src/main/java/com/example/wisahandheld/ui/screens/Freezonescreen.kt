@@ -71,13 +71,13 @@ fun FreeZoneScreen(
     var resultIsError by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Confirmed-sent scans, kept around just so the operator can still see
-    // what was already counted here instead of the list going blank the
-    // moment a Send succeeds — this is a session-only display convenience,
-    // NOT the source of truth (that's the server now); it resets if this
-    // screen is left and re-entered, unlike FreeZoneQueue.scans which is
-    // persisted because it's real not-yet-saved data.
-    val sentHistory = remember { mutableStateListOf<String>() }
+    // Catch-up: if anything was left queued from before this screen was
+    // last open (e.g. the operator left before a background sync caught
+    // up, or the app was killed), try sending it the moment the screen
+    // opens rather than waiting for the next scan or a manual Send tap.
+    LaunchedEffect(batchId) {
+        batchId?.let { FreeZoneQueue.triggerSync(deviceId, it, employeeName) }
+    }
 
     fun group(raws: List<String>): List<FreeZoneScan> {
         val counts = LinkedHashMap<String, Int>()
@@ -89,9 +89,13 @@ fun FreeZoneScreen(
     // workaround for boxes stacked too deep to reach each one's own tag,
     // see FreeZoneQueue.addScan) shows as ONE row with count=N rather than
     // N identical rows. Order follows first-occurrence in the underlying
-    // (newest-first) queue, so the newest group still lands on top.
+    // (newest-first) list, so the newest group still lands on top.
     val scans = remember(FreeZoneQueue.scans.toList()) { group(FreeZoneQueue.scans) }
-    val sentGroups = remember(sentHistory.toList()) { group(sentHistory) }
+    // Confirmed-sent, kept visible below the pending list — see
+    // FreeZoneQueue.sentThisSession's own doc comment on why this lives
+    // there (not screen-local state): a background auto-sync can confirm a
+    // box just as easily as the Send button, and both need to land here.
+    val sentGroups = remember(FreeZoneQueue.sentThisSession.toList()) { group(FreeZoneQueue.sentThisSession) }
 
     fun addScan(raw: String) {
         val code = raw.trim()
@@ -99,6 +103,12 @@ fun FreeZoneScreen(
         scanInput = ""
         resultMessage = null
         FreeZoneQueue.addScan(code)
+        // Try to sync right away in the background — most boxes end up
+        // confirmed (moved to the "ส่งแล้ว ✓" section below) before the
+        // operator even looks up from the scanner. The Send button below
+        // still exists for a manual "try right now" nudge, e.g. right
+        // after WiFi comes back instead of waiting for the next scan.
+        batchId?.let { FreeZoneQueue.triggerSync(deviceId, it, employeeName) }
     }
 
     fun send() {
@@ -110,21 +120,9 @@ fun FreeZoneScreen(
         }
         if (sending || FreeZoneQueue.scans.isEmpty()) return
         sending = true
-        val beforeSend = FreeZoneQueue.scans.toList()
         scope.launch {
             val result = FreeZoneQueue.sendAll(deviceId, batch, employeeName)
             sending = false
-
-            // Diff by count, not by Set membership — duplicates are allowed
-            // (see FreeZoneQueue.addScan), so a plain "removed from list"
-            // check would under/over-count when the same raw text appears
-            // more than once with only some copies confirmed sent.
-            val beforeCounts = beforeSend.groupingBy { it }.eachCount()
-            val afterCounts = FreeZoneQueue.scans.groupingBy { it }.eachCount()
-            beforeCounts.forEach { (raw, beforeCount) ->
-                val sentCount = beforeCount - (afterCounts[raw] ?: 0)
-                repeat(sentCount) { sentHistory.add(0, raw) }
-            }
 
             // `result.success` tells apart two very different failures that
             // used to look identical to the operator: `false` means the
@@ -300,11 +298,6 @@ fun FreeZoneScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             if (p != null) {
                                 Text(text = p.partNumber, color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    text = "Box ${p.boxSeq}/${p.totalBoxes} · Order ${p.orderNumber}",
-                                    color = Muted,
-                                    fontSize = 8.5.sp
-                                )
                             } else {
                                 Text(text = "สแกนแล้ว (ดูตัวอย่างไม่ได้)", color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                 Text(text = "จะให้ระบบตรวจสอบตอนกด Send", color = Muted, fontSize = 8.5.sp)
@@ -331,14 +324,16 @@ fun FreeZoneScreen(
                 }
 
                 // Confirmed-sent, kept visible below the pending list (see
-                // sentHistory's own doc comment) — muted/checked styling,
-                // no × since there's nothing left to correct here, this
-                // box's real record now lives on the server.
+                // sentThisSession's own doc comment) — same normal card
+                // styling as the pending list (not dimmed/grayed out), just
+                // a ✓ badge instead of the × remove button, since there's
+                // nothing left to correct here — this box's real record now
+                // lives on the server.
                 if (sentGroups.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "ส่งแล้ว (${sentHistory.size} กล่อง)",
+                            text = "ส่งแล้ว (${FreeZoneQueue.sentThisSession.size} กล่อง)",
                             color = Muted,
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Medium
@@ -349,30 +344,25 @@ fun FreeZoneScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Muted.copy(alpha = 0.08f), RoundedCornerShape(11.dp))
-                                .border(1.dp, Muted.copy(alpha = 0.15f), RoundedCornerShape(11.dp))
+                                .background(CardWhite, RoundedCornerShape(11.dp))
+                                .border(1.dp, BorderLight, RoundedCornerShape(11.dp))
                                 .padding(horizontal = 11.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 if (p != null) {
-                                    Text(text = p.partNumber, color = Muted, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        text = "Box ${p.boxSeq}/${p.totalBoxes} · Order ${p.orderNumber}",
-                                        color = Muted,
-                                        fontSize = 8.5.sp
-                                    )
+                                    Text(text = p.partNumber, color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                 } else {
-                                    Text(text = "ส่งแล้ว (ดูตัวอย่างไม่ได้)", color = Muted, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(text = "ส่งแล้ว (ดูตัวอย่างไม่ได้)", color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                             Text(
                                 text = "✓ ×${scan.count}",
-                                color = Muted,
+                                color = SuccessText,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier
-                                    .background(Muted.copy(alpha = 0.12f), RoundedCornerShape(7.dp))
+                                    .background(SuccessText.copy(alpha = 0.12f), RoundedCornerShape(7.dp))
                                     .padding(horizontal = 9.dp, vertical = 3.dp)
                             )
                         }

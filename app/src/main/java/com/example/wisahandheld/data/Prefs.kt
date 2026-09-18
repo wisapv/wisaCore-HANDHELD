@@ -28,6 +28,16 @@ object Prefs {
     // raw Kanban QR strings not yet confirmed saved by the server.
     private const val KEY_FREE_ZONE_SCANS = "free_zone_scans_json"
 
+    // Free Zone's confirmed-sent history (see FreeZoneQueue.sentThisSession)
+    // — was deliberately in-memory-only at first, but every code update
+    // during development restarts the app process just as much as an
+    // actual close ever would, so it kept looking like real data had
+    // vanished when it hadn't. Persisting it costs nothing (the real data
+    // is on the server either way; this is purely a "yes that really went
+    // through" display) and matches what people actually expect to see
+    // survive a restart.
+    private const val KEY_FREE_ZONE_SENT = "free_zone_sent_json"
+
     fun saveDeviceCode(context: Context, code: String) {
         prefs(context).edit().putString(KEY_DEVICE_CODE, code).apply()
     }
@@ -62,6 +72,13 @@ object Prefs {
     }
 
     fun loadFreeZoneScansJson(context: Context): String? = prefs(context).getString(KEY_FREE_ZONE_SCANS, null)
+
+    /** Raw JSON array string of every confirmed-sent Free Zone scan (display history only — the server is still the real source of truth). */
+    fun saveFreeZoneSentJson(context: Context, json: String) {
+        prefs(context).edit().putString(KEY_FREE_ZONE_SENT, json).apply()
+    }
+
+    fun loadFreeZoneSentJson(context: Context): String? = prefs(context).getString(KEY_FREE_ZONE_SENT, null)
 
     private fun prefs(context: Context) = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 }
